@@ -175,12 +175,24 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 		goto out;
 	}
 
+	//这就是混控器脚本中 M：后面的数字，几组累加
+	//如果这里设置为1 这样设置mixinfo->control_count = inputs =1;
+	//那么最终只会计算第一个 S：，不再计算第二个S：
 	mixinfo->control_count = inputs;
 
 	if (parse_output_scaler(end - buflen, buflen, mixinfo->output_scaler)) {
 		debug("simple mixer parser failed parsing out scaler tag, ret: '%s'", buf);
 		goto out;
 	}
+
+	//解析S：后面的参数
+	// control_group		= u[0];
+	// control_index		= u[1];
+	// scaler.negative_scale	= s[0] / 10000.0f;
+	// scaler.positive_scale	= s[1] / 10000.0f;
+	// scaler.offset		= s[2] / 10000.0f;
+	// scaler.min_output	= s[3] / 10000.0f;
+	// scaler.max_output	= s[4] / 10000.0f;
 
 	for (unsigned i = 0; i < inputs; i++) {
 		if (parse_control_scaler(end - buflen, buflen,

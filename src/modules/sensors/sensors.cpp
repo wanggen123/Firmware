@@ -1944,6 +1944,13 @@ Sensors::adc_poll(struct sensor_combined_s &raw)
 	}
 }
 
+
+//遥控器数据 从px4io.cpp 原始 -> sensor.cpp 归一化 -> manual_control_setpoint
+//由此可见px4io.cpp是运行在FMU上，相对的是PX4IOfirmware的程序是运行PX4iO协处理器上的
+
+//遥控器数据的获取
+//在Sensors::rc_poll()中发布的，发布主题manual_control_setpoint
+
 float
 Sensors::get_rc_value(uint8_t func, float min_value, float max_value)
 {
@@ -1965,6 +1972,8 @@ Sensors::get_rc_value(uint8_t func, float min_value, float max_value)
 	}
 }
 
+//三段式开关的处理，上中下
+
 switch_pos_t
 Sensors::get_rc_sw3pos_position(uint8_t func, float on_th, bool on_inv, float mid_th, bool mid_inv)
 {
@@ -1985,6 +1994,8 @@ Sensors::get_rc_sw3pos_position(uint8_t func, float on_th, bool on_inv, float mi
 		return manual_control_setpoint_s::SWITCH_POS_NONE;
 	}
 }
+
+//两段式开关的处理，上下，开关
 
 switch_pos_t
 Sensors::get_rc_sw2pos_position(uint8_t func, float on_th, bool on_inv)
@@ -2028,6 +2039,9 @@ Sensors::set_params_from_rc()
 		}
 	}
 }
+
+//遥控器数据处理在这里
+//最后发布主题manual_control_setpoint为他人所用
 
 void
 Sensors::rc_poll()
@@ -2210,8 +2224,24 @@ Sensors::rc_poll()
 					     _parameters.rc_killswitch_th, _parameters.rc_killswitch_inv);
 			manual.transition_switch = get_rc_sw2pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_TRANSITION,
 						   _parameters.rc_trans_th, _parameters.rc_trans_inv);
-			manual.gear_switch = get_rc_sw2pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_GEAR,
-					     _parameters.rc_gear_th, _parameters.rc_gear_inv);
+			//manual.gear_switch = get_rc_sw2pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_GEAR,
+			//			 _parameters.rc_gear_th, _parameters.rc_gear_inv);			
+
+
+			//上述屏蔽的是原来gear_switch的两段式处理get_rc_sw2pos_position。
+			//这里我采用三段式开关处理gear_switch，gear_switch原本只在mc_pos_control_main.cpp中用于旋翼起落架的控制
+			//这里我修改为三段式开关，想用这个开关来实现 襟翼单独控制 襟副翼一体控制 butterfly这三中襟翼控制的区分
+			
+			manual.gear_switch = get_rc_sw3pos_position(rc_channels_s::RC_CHANNELS_FUNCTION_GEAR, _parameters.rc_auto_th,
+						 _parameters.rc_auto_inv, _parameters.rc_assist_th, _parameters.rc_assist_inv);
+							  
+			// warnx("gear_switch=%d",manual.gear_switch);//这里我采用三段式开关处理gear_switch，得到的数值是1 2 3
+
+			// //打印验证这里是遥控器数据的获取与发布的地方
+			// warnx("roll=%8.4f",(double)manual.y);
+			// warnx("pitch=%8.4f",(double)manual.x);
+			// warnx("flaps=%8.4f",(double)manual.flaps);
+			
 
 			/* publish manual_control_setpoint topic */
 			if (_manual_control_pub != nullptr) {
@@ -2641,6 +2671,7 @@ Sensors::task_main()
 		}
 
 		/* Look for new r/c input data */
+		//RC数据获取的地方，发布主题manual_control_setpoint
 		rc_poll();
 
 		perf_end(_loop_perf);

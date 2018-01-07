@@ -167,6 +167,11 @@ private:
 	float _flaps_applied;
 	float _flaperons_applied;
 
+	//gear_switch原本只在mc_pos_control_main.cpp中用于旋翼起落架的控制
+	//sensor中修改为三段式开关，用这个开关来实现 襟翼单独控制 襟副翼一体控制 butterfly这三中襟翼控制的区分
+	//这里定义这一一个变量区分襟翼的这三种控制
+	uint8_t _flap_mode;
+
 
 	struct {
 		float p_tc;
@@ -396,7 +401,8 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_setpoint_valid(false),
 	_debug(false),
 	_flaps_applied(0),
-	_flaperons_applied(0)
+	_flaperons_applied(0),
+	_flap_mode(0)//襟翼三种控制的区分变量
 {
 	/* safely initialize structs */
 	_ctrl_state = {};
@@ -896,7 +902,21 @@ FixedwingAttitudeControl::task_main()
 				continue;
 			}
 
+			//襟翼的使用在fw位置控制中会处理，在这姿态控制里，我们默认就是使用襟翼
 			 _att_sp.apply_flaps=true;
+			
+			//gear_switch原本只在mc_pos_control_main.cpp中用于旋翼起落架的控制
+			//在sensor中修改为三段式开关，用这个开关来实现 襟翼单独控制 襟副翼一体控制 butterfly这三中襟翼控制的区分
+			_flap_mode = _manual.gear_switch;
+			//warnx("_flap_mode=%d",_flap_mode);//数值为 1 2 3
+									  
+
+			//下面这一段是 手动下襟翼flap的控制，分为两步
+			//1.将襟翼RC的摇杆值_manual.flaps直接看做襟翼的控制量flap_control
+			//2._flaps_applied才是最终得到的襟翼控制量，逐步累加deltaT，直到flap_control你摇杆打的量
+			// 强调_flaps_applied才是最终襟翼的控制量，是来源RC,但是是逐步累加上来的，不是一步到位flap_control
+			// _actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;//襟翼输出在MAIN 5通道
+
 			/* default flaps to center */
 			float flap_control = 0.0f;
 
@@ -911,6 +931,9 @@ FixedwingAttitudeControl::task_main()
 				flap_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaps_scale : 0.0f;
 			}
 
+			//万万注意，舵机只给一个常数值 是不会转的，这是我调试一个下午得出的结论
+			//万万注意，舵机只给一个常数值 是不会转的，这是我调试一个下午得出的结论
+			//万万注意，舵机只给一个常数值 是不会转的，这是我调试一个下午得出的结论
 			// move the actual control value continuous with time, full flap travel in 1sec
 			if (fabsf(_flaps_applied - flap_control) > 0.01f) {
 				_flaps_applied += (_flaps_applied - flap_control) < 0 ? deltaT : -deltaT;
@@ -1251,6 +1274,36 @@ FixedwingAttitudeControl::task_main()
 			_actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
 			// FIXME: this should use _vcontrol_mode.landing_gear_pos in the future
 			_actuators.control[7] = _manual.aux3;
+
+
+			//下面这段代码开始做襟翼控制模式的区分处理，单独的襟翼 襟副翼一体 butterfly襟翼，上面正常的姿态控制都没动
+			//上面正常的姿态控制 roll pitch yaw throttle 都没动，这是在上面注释了襟翼控制量由RC获取的过程
+			switch(_flap_mode)
+			{
+				case 3: //单独襟翼控制
+					warnx("f=%d",3);
+
+					break;
+
+				case 2: //襟副翼一体控制
+					warnx("l=%d",2);
+
+
+					break;
+
+				case 1: //butterfly襟副翼控制
+					warnx("a=%d",1);
+					_actuators.control[actuator_controls_s::INDEX_ROLL]=1;
+					_actuators.control[actuator_controls_s::INDEX_FLAPS]=1;
+					warnx("flap=%8.4f",(double)_actuators.control[actuator_controls_s::INDEX_FLAPS]);
+					warnx("roll=%8.4f",(double)_actuators.control[actuator_controls_s::INDEX_ROLL]);
+
+					break;
+				default:
+					warnx("p=%d",-1);
+ 			  		break;
+			}
+
 
 			/* lazily publish the setpoint only once available */
 			_actuators.timestamp = hrt_absolute_time();

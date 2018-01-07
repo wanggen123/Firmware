@@ -240,13 +240,18 @@ mixer_tick(void)
 			mixer_group.set_max_delta_out_once(delta_out_max);
 		}
 
+
+		//下面这段代码很重要，mixer的解析与计算过程，对于pixracer这些功能在fmu.cpp里面实现
+
 		/* mix */
 
 		/* poor mans mutex */
+		//互斥，解析脚本
 		in_mixer = true;
 		mixed = mixer_group.mix(&outputs[0], PX4IO_SERVO_COUNT, &r_mixer_limits);
 		in_mixer = false;
 
+		//计算pwm输出
 		/* the pwm limit call takes care of out of band errors */
 		pwm_limit_calc(should_arm, should_arm_nothrottle, mixed, r_setup_pwm_reverse, r_page_servo_disarmed,
 			       r_page_servo_control_min, r_page_servo_control_max, outputs, r_page_servos, &pwm_limit);
@@ -286,6 +291,7 @@ mixer_tick(void)
 		isr_debug(5, "> PWM disabled");
 	}
 
+	//pwm输出到定时器，后面就开始驱动电机了
 	if (mixer_servos_armed && (should_arm || should_arm_nothrottle)
 	    && !(r_setup_arming & PX4IO_P_SETUP_ARMING_LOCKDOWN)) {
 		/* update the servo outputs. */
@@ -332,6 +338,10 @@ mixer_callback(uintptr_t handle,
 		return -1;
 	}
 
+
+	//拿控制量，根据不同类型，从不同寄存器中拿控制量
+	//control就是混控器控制量的输入
+	
 	switch (source) {
 	case MIX_FMU:
 		if (control_index < PX4IO_CONTROL_CHANNELS && control_group < PX4IO_CONTROL_GROUPS) {

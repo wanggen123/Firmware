@@ -1837,6 +1837,12 @@ PX4IO::io_get_status()
 	return ret;
 }
 
+
+//得到最为原始的遥控器数据
+//遥控器数据 从px4io.cpp 原始 -> sensor.cpp 归一化 -> manual_control_setpoint
+//由此可见px4io.cpp是运行在FMU上，相对的是PX4IOfirmware的程序是运行PX4iO协处理器上的
+//FMU和IO通过串口通信
+
 int
 PX4IO::io_get_raw_rc_input(rc_input_values &input_rc)
 {

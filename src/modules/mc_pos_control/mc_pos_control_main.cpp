@@ -2173,6 +2173,10 @@ MulticopterPositionControl::task_main()
 				_att_sp.q_d_valid = true;
 			}
 
+			//gear_switch已经被我在sensor中用三段式开关处理，不再是这里的两段式作用
+			//三段式处理我主要想用这个开关来实现 襟翼单独控制 襟副翼一体控制 butterfly这三中襟翼控制的区分
+			//这些区分我会在FW_att_control中处理
+
 			if (_manual.gear_switch == manual_control_setpoint_s::SWITCH_POS_ON &&
 			    !_vehicle_land_detected.landed) {
 				_att_sp.landing_gear = 1.0f;
