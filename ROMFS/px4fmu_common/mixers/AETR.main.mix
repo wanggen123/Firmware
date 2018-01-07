@@ -22,9 +22,32 @@ As there is only one output, if using two servos adjustments to compensate for
 differences between the servos must be made mechanically.  To obtain the correct
 motion using a Y  cable, the servos can be positioned reversed from one another.
 
-M: 1
-O:      10000  10000      0 -10000  10000
+这是固定翼AETR的混控改动记录：
+
+ 现在链接方式 飞控PIXHAWK PWM的输出的接入
+    MAIN1接左副翼舵机  MAIN2接升降舵机  MAIN3接油门舵机  MAIN4接方向尾舵  
+    MAIN5接右副翼舵机  MAIN6接襟翼舵机（FALP遥控通道地面站可以设置）
+
+现在功能为 副翼 方向舵 升降舵 油门都可以正常控制，
+    最大的区别在于，襟翼的RC通道 同时控制着 襟副翼联动，因为我在副翼的混控里面添加了襟翼的控制量
+    左副翼的叠加襟翼 0 4  -10000  -10000      0 -10000  10000
+    右副翼的叠加襟翼 0 4  10000  10000      0 -10000  10000
+
+
+
+
+副翼左
+
+M: 2
+O:      -10000  -10000      0 -10000  10000
 S: 0 0  10000  10000      0 -10000  10000
+S: 0 4  -10000  -10000      0 -10000  10000
+
+
+
+
+
+升降舵
 
 Elevator mixer
 ------------
@@ -39,6 +62,10 @@ M: 1
 O:       10000   10000      0 -10000  10000
 S: 0 1  -10000  -10000      0 -10000  10000
 
+
+
+油门
+
 Motor speed mixer
 -----------------
 Two scalers total (output, thrust).
@@ -49,6 +76,9 @@ range.  Inputs below zero are treated as zero.
 M: 1
 O:      10000  10000      0 -10000  10000
 S: 0 3      0  20000 -10000 -10000  10000
+
+
+方向舵
 
 Rudder mixer
 ------------
@@ -62,3 +92,19 @@ endpoints to suit.
 M: 1
 O:      10000  10000      0 -10000  10000
 S: 0 2  10000  10000      0 -10000  10000
+
+
+两路襟翼（Y线）
+
+M: 1
+O:      10000  10000      0 -10000  10000
+S: 0 4  10000  10000      0 -10000  10000
+
+
+
+副翼右
+
+M: 2
+O:      -10000  -10000      0 -10000  10000
+S: 0 0  10000  10000      0 -10000  10000
+S: 0 4  10000  10000      0 -10000  10000

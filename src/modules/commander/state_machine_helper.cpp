@@ -376,23 +376,32 @@ main_state_transition(struct vehicle_status_s *status, main_state_t new_main_sta
 		ret = TRANSITION_CHANGED;
 		break;
 
+	//原来固定翼是没有arco和半自稳模式,我现在就用这两种模式做模态切换
 	case commander_state_s::MAIN_STATE_ACRO:
 	case commander_state_s::MAIN_STATE_RATTITUDE:
 		if (status->is_rotary_wing) {
 			ret = TRANSITION_CHANGED;
 		}
-
-		break;
-
-	case commander_state_s::MAIN_STATE_ALTCTL:
-
-		/* need at minimum altitude estimate */
-		if (status_flags->condition_local_altitude_valid ||
-		    status_flags->condition_global_position_valid) {
+		else
+		{
 			ret = TRANSITION_CHANGED;
 		}
-
 		break;
+
+		case commander_state_s::MAIN_STATE_ALTCTL:
+
+		/* need at minimum altitude estimate */
+			ret = TRANSITION_CHANGED;
+		break;
+	// case commander_state_s::MAIN_STATE_ALTCTL:
+
+	// 	/* need at minimum altitude estimate */
+	// 	if (status_flags->condition_local_altitude_valid ||
+	// 	    status_flags->condition_global_position_valid) {
+	// 		ret = TRANSITION_CHANGED;
+	// 	}
+
+	// 	break;
 
 	case commander_state_s::MAIN_STATE_POSCTL:
 

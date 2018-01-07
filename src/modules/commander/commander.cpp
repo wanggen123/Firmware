@@ -2678,6 +2678,7 @@ int commander_thread_main(int argc, char *argv[])
 
 			/* evaluate the main state machine according to mode switches */
 			bool first_rc_eval = (_last_sp_man.timestamp == 0) && (sp_man.timestamp > 0);
+			//根据遥控器设置主模式 main_state
 			transition_result_t main_res = set_main_state_rc(&status);
 
 			/* play tune on mode change only if armed, blink LED always */
@@ -2915,6 +2916,9 @@ int commander_thread_main(int argc, char *argv[])
 			arming_state_changed = false;
 		}
 
+
+
+		
 		/* now set navigation state according to failsafe and main state */
 		bool nav_state_changed = set_nav_state(&status,
 						       &internal_state,
@@ -3201,6 +3205,14 @@ control_status_leds(vehicle_status_s *status_local, const actuator_armed_s *actu
 	leds_counter++;
 }
 
+
+
+
+
+//根据遥控器设置主模式main_state
+//main_state_transition做遥控器切换模式的判断，如果可以切换就复制遥控器模式=main_state
+//如果切换不了，这下面做模式的降级处理
+
 transition_result_t
 set_main_state_rc(struct vehicle_status_s *status_local)
 {
@@ -3283,13 +3295,21 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 			return TRANSITION_DENIED;
 		}
 
+
+		
+		
+		//以下是根据遥控器进行6种模式的切换,其中包括我的manual,arco,ratitude
+
 		int new_mode = _flight_mode_slots[sp_man.mode_slot];
 
 		if (new_mode < 0) {
 			/* slot is unused */
 			res = TRANSITION_NOT_CHANGED;
 
-		} else {
+		} 
+		else 
+		{	
+			//对遥控器切换的新模式进行判断，这里面主要根据位置数据，判断模式是否可以切换，切换不了的话，下面会有降级机制
 			res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
 
 			/* ensure that the mode selection does not get stuck here */
@@ -3297,13 +3317,15 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 
 			/* enable the use of break */
 			/* fallback strategies, give the user the closest mode to what he wanted */
+			//遥控器切换的模式拒绝后退降级策略,一级一级后退.
+			//这里面复制new_mode
 			while (res == TRANSITION_DENIED && maxcount > 0) {
 
 				maxcount--;
 
 				if (new_mode == commander_state_s::MAIN_STATE_AUTO_MISSION) {
 
-					/* fall back to loiter */
+					//misiion被拒绝，降级为loiter
 					new_mode = commander_state_s::MAIN_STATE_AUTO_LOITER;
 					print_reject_mode(status_local, "AUTO MISSION");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
@@ -3315,7 +3337,7 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 
 				if (new_mode == commander_state_s::MAIN_STATE_AUTO_RTL) {
 
-					/* fall back to position control */
+					//RTL被拒绝，降级为loiter
 					new_mode = commander_state_s::MAIN_STATE_AUTO_LOITER;
 					print_reject_mode(status_local, "AUTO RTL");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
@@ -3327,7 +3349,7 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 
 				if (new_mode == commander_state_s::MAIN_STATE_AUTO_LAND) {
 
-					/* fall back to position control */
+					//land被拒绝，降级为loiter
 					new_mode = commander_state_s::MAIN_STATE_AUTO_LOITER;
 					print_reject_mode(status_local, "AUTO LAND");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
@@ -3338,7 +3360,7 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 				}
 
 				if (new_mode == commander_state_s::MAIN_STATE_AUTO_TAKEOFF) {
-
+					//takeoff被拒绝，降级为loiter
 					/* fall back to position control */
 					new_mode = commander_state_s::MAIN_STATE_AUTO_LOITER;
 					print_reject_mode(status_local, "AUTO TAKEOFF");
@@ -3363,7 +3385,7 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 
 				if (new_mode == commander_state_s::MAIN_STATE_AUTO_LOITER) {
 
-					/* fall back to position control */
+					//上面都降级为loiter被拒绝，那么降级为position */
 					new_mode = commander_state_s::MAIN_STATE_POSCTL;
 					print_reject_mode(status_local, "AUTO HOLD");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
@@ -3375,7 +3397,7 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 
 				if (new_mode == commander_state_s::MAIN_STATE_POSCTL) {
 
-					/* fall back to altitude control */
+					//position被拒绝降级为alt
 					new_mode = commander_state_s::MAIN_STATE_ALTCTL;
 					print_reject_mode(status_local, "POSITION CONTROL");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
@@ -3531,6 +3553,15 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 	return res;
 }
 
+
+
+
+
+
+
+
+
+
 void
 set_control_mode()
 {
@@ -3541,21 +3572,14 @@ set_control_mode()
 	control_mode.flag_control_offboard_enabled = false;
 
 	switch (status.nav_state) {
-	case vehicle_status_s::NAVIGATION_STATE_MANUAL:
-		control_mode.flag_control_manual_enabled = true;
-		control_mode.flag_control_auto_enabled = false;
-		control_mode.flag_control_rates_enabled = stabilization_required();
-		control_mode.flag_control_attitude_enabled = stabilization_required();
-		control_mode.flag_control_rattitude_enabled = false;
-		control_mode.flag_control_altitude_enabled = false;
-		control_mode.flag_control_climb_rate_enabled = false;
-		control_mode.flag_control_position_enabled = false;
-		control_mode.flag_control_velocity_enabled = false;
-		control_mode.flag_control_acceleration_enabled = false;
-		control_mode.flag_control_termination_enabled = false;
-		break;
+		control_mode.flight_mode_ID=0;//用这个我自己定义的变量来区分这几个相同的自稳模式谁是谁
+									  //默认这个变量为0,用于区分stabilize manual rattitude arco
 
 	case vehicle_status_s::NAVIGATION_STATE_STAB:
+		//warnx("%s\n","--stab");
+		//mavlink_log_info(&mavlink_log_pub, "set_control_mode STAB");
+		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
+		control_mode.flight_mode_ID=1;
 		control_mode.flag_control_manual_enabled = true;
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
@@ -3571,7 +3595,33 @@ set_control_mode()
 		control_mode.flag_external_manual_override_ok = false;
 		break;
 
-	case vehicle_status_s::NAVIGATION_STATE_RATTITUDE:
+	//正常manual
+	case vehicle_status_s::NAVIGATION_STATE_MANUAL:
+		//warnx("%s\n","--Manual");
+		//mavlink_log_info(&mavlink_log_pub, "set_control_mode Manual");
+		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
+		control_mode.flight_mode_ID=2;
+		control_mode.flag_control_manual_enabled = true;
+		control_mode.flag_control_auto_enabled = false;
+		control_mode.flag_control_rates_enabled = stabilization_required();
+		control_mode.flag_control_attitude_enabled = stabilization_required();
+		control_mode.flag_control_rattitude_enabled = false;
+		control_mode.flag_control_altitude_enabled = false;
+		control_mode.flag_control_climb_rate_enabled = false;
+		control_mode.flag_control_position_enabled = false;
+		control_mode.flag_control_velocity_enabled = false;
+		control_mode.flag_control_acceleration_enabled = false;
+		control_mode.flag_control_termination_enabled = false;
+		break;
+
+
+
+	//第一个模态:以俯仰角10度 后退发电
+	case vehicle_status_s::NAVIGATION_STATE_ALTCTL:
+		//warnx("%s\n","--Manual");
+		//mavlink_log_info(&mavlink_log_pub, "set_control_mode Manual");
+		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
+		control_mode.flight_mode_ID=3;
 		control_mode.flag_control_manual_enabled = true;
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
@@ -3583,21 +3633,68 @@ set_control_mode()
 		control_mode.flag_control_velocity_enabled = false;
 		control_mode.flag_control_acceleration_enabled = false;
 		control_mode.flag_control_termination_enabled = false;
+		/* override is not ok in stabilized mode */
+		control_mode.flag_external_manual_override_ok = false;
 		break;
 
-	case vehicle_status_s::NAVIGATION_STATE_ALTCTL:
+
+	//第二个模态:以俯仰角3度上升
+	case vehicle_status_s::NAVIGATION_STATE_RATTITUDE:
+		//warnx("%s\n","--Ratti");
+		//mavlink_log_info(&mavlink_log_pub, "set_control_mode Rattitude");
+		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
+		control_mode.flight_mode_ID=4;
 		control_mode.flag_control_manual_enabled = true;
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
 		control_mode.flag_control_attitude_enabled = true;
-		control_mode.flag_control_rattitude_enabled = false;
-		control_mode.flag_control_altitude_enabled = true;
-		control_mode.flag_control_climb_rate_enabled = true;
+		control_mode.flag_control_rattitude_enabled = true;
+		control_mode.flag_control_altitude_enabled = false;
+		control_mode.flag_control_climb_rate_enabled = false;
 		control_mode.flag_control_position_enabled = false;
 		control_mode.flag_control_velocity_enabled = false;
 		control_mode.flag_control_acceleration_enabled = false;
 		control_mode.flag_control_termination_enabled = false;
+		/* override is not ok in stabilized mode */
+		control_mode.flag_external_manual_override_ok = false;
 		break;
+
+	//第三个模态:以俯仰角-5度下降
+	case vehicle_status_s::NAVIGATION_STATE_ACRO:
+		//warnx("%s\n","--ARCO");
+		//mavlink_log_info(&mavlink_log_pub, "set_control_mode ACRO");
+		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
+		control_mode.flight_mode_ID=8;
+		control_mode.flag_control_manual_enabled = true;
+		control_mode.flag_control_auto_enabled = false;
+		control_mode.flag_control_rates_enabled = true;
+		control_mode.flag_control_attitude_enabled = true;
+		control_mode.flag_control_rattitude_enabled = true;
+		control_mode.flag_control_altitude_enabled = false;
+		control_mode.flag_control_climb_rate_enabled = false;
+		control_mode.flag_control_position_enabled = false;
+		control_mode.flag_control_velocity_enabled = false;
+		control_mode.flag_control_acceleration_enabled = false;
+		control_mode.flag_control_termination_enabled = false;
+		/* override is not ok in stabilized mode */
+		control_mode.flag_external_manual_override_ok = false;
+		break;
+
+
+
+	// case vehicle_status_s::NAVIGATION_STATE_ALTCTL:
+	// 	control_mode.flag_control_manual_enabled = true;
+	// 	control_mode.flag_control_auto_enabled = false;
+	// 	control_mode.flag_control_rates_enabled = true;
+	// 	control_mode.flag_control_attitude_enabled = true;
+	// 	control_mode.flag_control_rattitude_enabled = false;
+	// 	control_mode.flag_control_altitude_enabled = true;
+	// 	control_mode.flag_control_climb_rate_enabled = true;
+	// 	control_mode.flag_control_position_enabled = false;
+	// 	control_mode.flag_control_velocity_enabled = false;
+	// 	control_mode.flag_control_acceleration_enabled = false;
+	// 	control_mode.flag_control_termination_enabled = false;
+	// 	break;
 
 	case vehicle_status_s::NAVIGATION_STATE_POSCTL:
 		control_mode.flag_control_manual_enabled = true;
@@ -3652,19 +3749,6 @@ set_control_mode()
 		control_mode.flag_control_termination_enabled = false;
 		break;
 
-	case vehicle_status_s::NAVIGATION_STATE_ACRO:
-		control_mode.flag_control_manual_enabled = true;
-		control_mode.flag_control_auto_enabled = false;
-		control_mode.flag_control_rates_enabled = true;
-		control_mode.flag_control_attitude_enabled = false;
-		control_mode.flag_control_rattitude_enabled = false;
-		control_mode.flag_control_altitude_enabled = false;
-		control_mode.flag_control_climb_rate_enabled = false;
-		control_mode.flag_control_position_enabled = false;
-		control_mode.flag_control_velocity_enabled = false;
-		control_mode.flag_control_acceleration_enabled = false;
-		control_mode.flag_control_termination_enabled = false;
-		break;
 
 	case vehicle_status_s::NAVIGATION_STATE_DESCEND:
 		/* TODO: check if this makes sense */

@@ -561,3 +561,39 @@ PARAM_DEFINE_FLOAT(FW_MAN_P_SC, 1.0f);
  * @group FW Attitude Control
  */
 PARAM_DEFINE_FLOAT(FW_MAN_Y_SC, 1.0f);
+
+/**
+ * first stage back pitch angle
+ *
+ * The first stage,The aircraft retreated at an angle ,pulling the rope to generate electricity.
+ *
+ * @unit deg
+ * @min -90.0
+ * @max 90.0
+ * 
+ */
+PARAM_DEFINE_FLOAT(A_BACK_PITCH, 10.0f);
+
+/**
+ * second stage rise pitch angle
+ *
+ * The second stage, the aircraft gradually rose at a certain angle.
+ *
+ * @unit deg
+ * @min -90.0
+ * @max 90.0
+ * 
+ */
+PARAM_DEFINE_FLOAT(A_RISE_PITCH, 3.0f);
+
+/**
+ * third stage dive pitch angle
+ *
+ * The third stage,The aircraft dive at an angle.
+ *
+ * @unit deg
+ * @min -90.0
+ * @max 90.0
+ * 
+ */
+PARAM_DEFINE_FLOAT(B_DIVE_PITCH, -5.0f);

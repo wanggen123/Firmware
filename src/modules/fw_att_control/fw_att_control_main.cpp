@@ -205,8 +205,15 @@ private:
 		float trim_yaw;
 		float rollsp_offset_deg;		/**< Roll Setpoint Offset in deg */
 		float pitchsp_offset_deg;		/**< Pitch Setpoint Offset in deg */
+		float Back_Pitch_Angle;
+		float Rise_Pitch_Angle;
+		float Dive_Pitch_Angle;
+
 		float rollsp_offset_rad;		/**< Roll Setpoint Offset in rad */
 		float pitchsp_offset_rad;		/**< Pitch Setpoint Offset in rad */
+		float Back_Pitch_rad;
+		float Rise_Pitch_rad;
+		float Dive_Pitch_rad;
 		float man_roll_max;				/**< Max Roll in rad */
 		float man_pitch_max;			/**< Max Pitch in rad */
 		float man_roll_scale;			/**< scale factor applied to roll actuator control in pure manual mode */
@@ -258,6 +265,9 @@ private:
 		param_t trim_yaw;
 		param_t rollsp_offset_deg;
 		param_t pitchsp_offset_deg;
+		param_t Back_Pitch_Angle;
+		param_t Rise_Pitch_Angle;
+		param_t Dive_Pitch_Angle;
 		param_t man_roll_max;
 		param_t man_pitch_max;
 		param_t man_roll_scale;
@@ -439,8 +449,13 @@ FixedwingAttitudeControl::FixedwingAttitudeControl() :
 	_parameter_handles.trim_roll = param_find("TRIM_ROLL");
 	_parameter_handles.trim_pitch = param_find("TRIM_PITCH");
 	_parameter_handles.trim_yaw = param_find("TRIM_YAW");
+
 	_parameter_handles.rollsp_offset_deg = param_find("FW_RSP_OFF");
-	_parameter_handles.pitchsp_offset_deg = param_find("FW_PSP_OFF");
+	_parameter_handles.pitchsp_offset_deg = param_find("FW_PSP_OFF");	
+	//下面是自定义的几个角度,仿照FW_PSP_OFF,如果想找他们,跟踪pitchsp_offset_deg和pitchsp_offset_rad就可以了.
+	_parameter_handles.Back_Pitch_Angle  = param_find("A_BACK_PITCH");
+	_parameter_handles.Rise_Pitch_Angle  = param_find("A_RISE_PITCH");
+	_parameter_handles.Dive_Pitch_Angle  = param_find("B_DIVE_PITCH");
 
 	_parameter_handles.man_roll_max = param_find("FW_MAN_R_MAX");
 	_parameter_handles.man_pitch_max = param_find("FW_MAN_P_MAX");
@@ -531,6 +546,17 @@ FixedwingAttitudeControl::parameters_update()
 	param_get(_parameter_handles.pitchsp_offset_deg, &(_parameters.pitchsp_offset_deg));
 	_parameters.rollsp_offset_rad = math::radians(_parameters.rollsp_offset_deg);
 	_parameters.pitchsp_offset_rad = math::radians(_parameters.pitchsp_offset_deg);
+	
+	param_get(_parameter_handles.Back_Pitch_Angle, &(_parameters.Back_Pitch_Angle));
+	param_get(_parameter_handles.Rise_Pitch_Angle, &(_parameters.Rise_Pitch_Angle));
+	param_get(_parameter_handles.Dive_Pitch_Angle, &(_parameters.Dive_Pitch_Angle));
+	_parameters.Back_Pitch_rad = math::radians(_parameters.Back_Pitch_Angle);//将角度转化为弧度使用
+	_parameters.Rise_Pitch_rad = math::radians(_parameters.Rise_Pitch_Angle);
+	_parameters.Dive_Pitch_rad = math::radians(_parameters.Dive_Pitch_Angle);
+	warnx("Back_Pitch_Angle=%8.4f\n",(double)_parameters.Back_Pitch_Angle);
+	warnx("Rise_Pitch_rad=%8.4f\n",(double)_parameters.Rise_Pitch_Angle);
+	warnx("Dive_Pitch_rad=%8.4f\n",(double)_parameters.Dive_Pitch_Angle);
+//11111111
 	param_get(_parameter_handles.man_roll_max, &(_parameters.man_roll_max));
 	param_get(_parameter_handles.man_pitch_max, &(_parameters.man_pitch_max));
 	_parameters.man_roll_max = math::radians(_parameters.man_roll_max);
@@ -870,13 +896,15 @@ FixedwingAttitudeControl::task_main()
 				continue;
 			}
 
+			 _att_sp.apply_flaps=true;
 			/* default flaps to center */
 			float flap_control = 0.0f;
 
 			/* map flaps by default to manual if valid */
 			if (PX4_ISFINITE(_manual.flaps) && _vcontrol_mode.flag_control_manual_enabled
 			    && fabsf(_parameters.flaps_scale) > 0.01f) {
-				flap_control = 0.5f * (_manual.flaps + 1.0f) * _parameters.flaps_scale;
+				flap_control = (_manual.flaps ) * _parameters.flaps_scale;
+				//flap_control = 0.5f * (_manual.flaps + 1.0f) * _parameters.flaps_scale;
 
 			} else if (_vcontrol_mode.flag_control_auto_enabled
 				   && fabsf(_parameters.flaps_scale) > 0.01f) {
@@ -954,18 +982,67 @@ FixedwingAttitudeControl::task_main()
 				float yaw_manual = 0.0f;
 				float throttle_sp = 0.0f;
 
-				// in STABILIZED mode we need to generate the attitude setpoint
-				// from manual user inputs
-				if (!_vcontrol_mode.flag_control_climb_rate_enabled) {
-					_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
-					_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
-					_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.pitchsp_offset_rad;
-					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
-					_att_sp.yaw_body = 0.0f;
-					_att_sp.thrust = _manual.z;
+				// 下面是手动模式下摇杆可控,手动模式下需要产生attitude setpoint
+				// _offset_rad默认为0,就是遥控器的微调.
+				if (!_vcontrol_mode.flag_control_climb_rate_enabled) 
+				{	
 					int instance;
+					//warnx("%d\n",_vcontrol_mode.flight_mode_ID);
+					switch(_vcontrol_mode.flight_mode_ID)
+					{
+						case 1:  //stabilize
+						case 2:
+							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
+							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.pitchsp_offset_rad;
+							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+							_att_sp.yaw_body = 0.0f;
+							_att_sp.thrust = _manual.z;									
+							break;					
+							
+
+						case 3:  //altitude //第一后退模态
+							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
+							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Back_Pitch_rad;
+							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+							_att_sp.yaw_body = 0.0f;
+							_att_sp.thrust = _manual.z;
+							break;
+
+						case 4:  //Rattitude //第二上升模态
+							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
+							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Rise_Pitch_rad;
+							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+							_att_sp.yaw_body = 0.0f;
+							_att_sp.thrust = _manual.z;
+							break;
+
+						case 8:  //ARCO  //第三下降模态
+							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
+							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Dive_Pitch_rad;
+							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+							_att_sp.yaw_body = 0.0f;
+							_att_sp.thrust = _manual.z;
+							break;
+					}
+					
+							// //以下测试遥控器切换模式是否成功,以及遥控是否可控
+							// static int kk=0;
+							// kk++;
+							// while(kk>200)
+							// {kk=0;
+							// 	warnx("test mode and rc");
+							// 	warnx("mode=%d",_vcontrol_mode.flight_mode_ID);	
+							// 	warnx("p=%8.4f\n",(double)_att_sp.pitch_body*57.3);
+							// 	warnx("r=%8.4f\n",(double)_att_sp.roll_body*57.3);					
+							// 	warnx("y=%8.4f\n",(double)_att_sp.yaw_body*57.3);
+							// 	warnx("t=%8.4f\n",(double)_att_sp.thrust);
+							// }
 					orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
-				}
+				}//上面是手动模式下摇杆可控,手动模式下可以根据摇杆产生期望姿态,如果是自动则用下面的代码进行获取
 
 				roll_sp = _att_sp.roll_body;
 				pitch_sp = _att_sp.pitch_body;
@@ -1033,6 +1110,19 @@ FixedwingAttitudeControl::task_main()
 
 				/* Run attitude controllers */
 				if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
+
+							// ////以下最终的输入控制器的是不是之前手动算出来的
+							// static int yy=0;
+							// yy++;
+							// while(yy>200)
+							// {yy=0;				
+							// 	warnx("verification");
+							// 	warnx("p=%8.4f\n",(double)control_input.pitch_setpoint*57.3);
+							// 	warnx("r=%8.4f\n",(double)control_input.roll_setpoint*57.3);
+							// 	warnx("y=%8.4f\n",(double)control_input.yaw_setpoint*57.3);
+							// 	warnx("air=%8.4f\n",(double)airspeed);
+							// }
+
 					_roll_ctrl.control_attitude(control_input);
 					_pitch_ctrl.control_attitude(control_input);
 					_yaw_ctrl.control_attitude(control_input); //runs last, because is depending on output of roll and pitch attitude
@@ -1156,7 +1246,7 @@ FixedwingAttitudeControl::task_main()
 				_actuators.control[actuator_controls_s::INDEX_THROTTLE] = _manual.z;
 			}
 
-			_actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;
+			_actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;//襟翼输出在MAIN 5通道
 			_actuators.control[5] = _manual.aux1;
 			_actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
 			// FIXME: this should use _vcontrol_mode.landing_gear_pos in the future

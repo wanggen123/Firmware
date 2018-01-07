@@ -1258,6 +1258,30 @@ void FixedwingPositionControl::do_takeoff_help(float *hold_altitude, float *pitc
 	}
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 bool
 FixedwingPositionControl::control_position(const math::Vector<2> &current_position, const math::Vector<3> &ground_speed,
 		const struct position_setpoint_triplet_s &pos_sp_triplet)
@@ -1276,7 +1300,10 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		return false;
 	}
 
+	//这是位置控制的返回值,跳出这里 回归函数,他代表是否使用位置控制的期望姿态.
+	//他的赋值就只有这两处,这里初始化为true,默认使用位置控制计算的姿态.另一处在下面手动控制下重置为false.
 	bool setpoint = true;
+	 
 
 	_att_sp.fw_control_yaw = false;		// by default we don't want yaw to be contoller directly with rudder
 	_att_sp.apply_flaps = false;		// by default we don't use flaps
@@ -1342,7 +1369,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		_was_in_air = false;
 	}
 
-	if (_control_mode.flag_control_auto_enabled &&
+	if (_control_mode.flag_control_auto_enabled && 
 	    pos_sp_triplet.current.valid) {
 		/* AUTONOMOUS FLIGHT */
 
@@ -1522,7 +1549,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					mavlink_log_info(&_mavlink_log_pub, "#Landing, heading hold");
 				}
 
-//					warnx("NORET: %d, target_bearing: %d, yaw: %d", (int)land_noreturn_horizontal, (int)math::degrees(target_bearing), (int)math::degrees(_yaw));
+     //					warnx("NORET: %d, target_bearing: %d, yaw: %d", (int)land_noreturn_horizontal, (int)math::degrees(target_bearing), (int)math::degrees(_yaw));
 
 				_l1_control.navigate_heading(_target_bearing, _yaw, nav_speed_2d);
 
@@ -1891,7 +1918,11 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_att_sp.roll_reset_integral = true;
 		}
 
-	} else if (_control_mode.flag_control_velocity_enabled &&
+	}
+	
+	//如果z轴控高度 水平控速度,那就是定点模式了.在四选一定点模式,三轴都是控速度,但是固定翼是没法停在一个点的
+	//下面去验证下 摇杆的转化量
+	else if (_control_mode.flag_control_velocity_enabled &&
 		   _control_mode.flag_control_altitude_enabled) {
 		/* POSITION CONTROL: pitch stick moves altitude setpoint, throttle stick sets airspeed,
 		   heading is set to a distant waypoint */
@@ -2016,7 +2047,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_att_sp.yaw_body = 0;
 		}
 
-	} else if (_control_mode.flag_control_altitude_enabled) {
+	} 
+	else if (_control_mode.flag_control_altitude_enabled) {
 		/* ALTITUDE CONTROL: pitch stick moves altitude setpoint, throttle stick sets airspeed */
 
 		if (_control_mode_current != FW_POSCTRL_MODE_POSITION && _control_mode_current != FW_POSCTRL_MODE_ALTITUDE) {
@@ -2068,10 +2100,12 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
 		_att_sp.yaw_body = 0;
 
-	} else {
+	} 
+	else {
 		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 
-		/* do not publish the setpoint */
+		//手动模式下,下面是返回值为false,跳出主函数中,就是不发布位置控制计算的att_sp.
+		//即手动模式下,位置控制没用,瞎计算,在姿态控制中将会接收遥控器转化为期望姿态.
 		setpoint = false;
 
 		// reset hold altitude
@@ -2138,7 +2172,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	use_tecs_pitch &= !(pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_LAND &&
 			    _land_noreturn_vertical);
 
-	// manual attitude control
+	// manual attitude control,手动控制下不用tecs算出来的pitch
 	use_tecs_pitch &= !(_control_mode_current == FW_POSCTRL_MODE_OTHER);
 
 	if (use_tecs_pitch) {
@@ -2326,9 +2360,11 @@ FixedwingPositionControl::task_main()
 			 * Attempt to control position, on success (= sensors present and not in manual mode),
 			 * publish setpoint.
 			 */
-			if (control_position(current_position, ground_speed, _pos_sp_triplet)) {
+			//下面调用位置控制,实际的代码都在这里面,如果调用成功 说明计算好了_att_sp病发布使用他.如果返回false则就不会发布期望的姿态了!
+			if (control_position(current_position, ground_speed, _pos_sp_triplet)) 
+			{
 				_att_sp.timestamp = hrt_absolute_time();
-
+				//位置控制计算成功,得到期望的姿态.
 				// add attitude setpoint offsets
 				_att_sp.roll_body += _parameters.rollsp_offset_rad;
 				_att_sp.pitch_body += _parameters.pitchsp_offset_rad;
@@ -2373,7 +2409,7 @@ FixedwingPositionControl::task_main()
 					fw_pos_ctrl_status_publish();
 				}
 
-			}
+			}//位置控制成功发布了两个topic,不成功啥也没有
 
 			perf_end(_loop_perf);
 		}
