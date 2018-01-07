@@ -232,6 +232,16 @@ calculate_fw_crc(void)
 	r_page_setup[PX4IO_P_SETUP_CRC + 1] = sum >> 16;
 }
 
+
+
+
+
+
+
+
+//user_start  在启动脚本中 主处理器和协处理器的启动过程
+//这是协处理器启动的入口，忘了，再百度下“PIXHAWK的启动过程”
+
 int
 user_start(int argc, char *argv[])
 {
@@ -373,6 +383,7 @@ user_start(int argc, char *argv[])
 
 		/* kick the control inputs */
 		perf_begin(controls_perf);
+		//这个里面层层跟踪，进行和遥控器数据的获取
 		controls_tick();
 		perf_end(controls_perf);
 

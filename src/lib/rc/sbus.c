@@ -224,6 +224,11 @@ sbus2_output(int sbus_fd, uint16_t *values, uint16_t num_values)
 	sbus1_output(sbus_fd, values, num_values);
 }
 
+
+
+//遥控器数据获取第一层
+//遥控器数据获取第一层
+//向上被px4iofirmware/control调用，跑到了PX4IO协处理器里
 bool
 sbus_input(int sbus_fd, uint16_t *values, uint16_t *num_values, bool *sbus_failsafe, bool *sbus_frame_drop,
 	   uint16_t max_channels)
@@ -265,6 +270,8 @@ sbus_input(int sbus_fd, uint16_t *values, uint16_t *num_values, bool *sbus_fails
 	/*
 	 * Try to decode something with what we got
 	 */
+
+	//遥控器数据获取第2层
 	if (sbus_parse(now, &buf[0], ret, values, num_values, sbus_failsafe,
 		       sbus_frame_drop, &sbus_frame_drops, max_channels)) {
 
@@ -274,6 +281,8 @@ sbus_input(int sbus_fd, uint16_t *values, uint16_t *num_values, bool *sbus_fails
 	return sbus_decoded;
 }
 
+//遥控器数据获取第2层
+//遥控器数据获取第2层
 bool
 sbus_parse(uint64_t now, uint8_t *frame, unsigned len, uint16_t *values,
 	   uint16_t *num_values, bool *sbus_failsafe, bool *sbus_frame_drop, unsigned *frame_drops, uint16_t max_channels)
@@ -349,8 +358,11 @@ sbus_parse(uint64_t now, uint8_t *frame, unsigned len, uint16_t *values,
 				 * Great, it looks like we might have a frame.  Go ahead and
 				 * decode it.
 				 */
-				decode_ret = sbus_decode(now, sbus_frame, values, num_values, sbus_failsafe, sbus_frame_drop, max_channels);
 
+				//遥控器数据获取第3层
+				//遥控器数据获取第3层
+				decode_ret = sbus_decode(now, sbus_frame, values, num_values, sbus_failsafe, sbus_frame_drop, max_channels);
+				
 				/*
 				 * Offset recovery: If decoding failed, check if there is a second
 				 * start marker in the packet.
@@ -518,6 +530,16 @@ static const struct sbus_bit_pick sbus_decoder[SBUS_INPUT_CHANNELS][3] = {
 	/* 15 */ { {20, 5, 0x07, 0}, {21, 0, 0xff, 3}, { 0, 0, 0x00,  0} }
 };
 
+//遥控器数据获取第4层
+//遥控器数据获取第4层
+//终于找到了这就是PX4IO里面最原始的遥控器数据
+//终于找到了这就是PX4IO里面最原始的遥控器数据
+//遥控器数据这里发出 到FMU：px4io.cpp -> sensor.cpp ->manual_control_setpoint
+//遥控器数据这里发出 到FMU：px4io.cpp -> sensor.cpp ->manual_control_setpoint
+//values[0]   channal 1 是roll通道当然这是地面站里面设置的
+//values[6]   channal 7 是襟翼通道当然这是地面站里面设置的
+//values[5]  是我地面站设置的channal 6 gear三段开关
+//values数组 遥控器数值，num_values遥控器通道数
 bool
 sbus_decode(uint64_t frame_time, uint8_t *frame, uint16_t *values, uint16_t *num_values,
 	    bool *sbus_failsafe, bool *sbus_frame_drop, uint16_t max_values)
@@ -576,6 +598,9 @@ sbus_decode(uint64_t frame_time, uint8_t *frame, uint16_t *values, uint16_t *num
 	/* we have received something we think is a frame */
 	last_frame_time = frame_time;
 
+
+	//chancount是遥控器通道数量
+
 	unsigned chancount = (max_values > SBUS_INPUT_CHANNELS) ?
 			     SBUS_INPUT_CHANNELS : max_values;
 
@@ -598,7 +623,15 @@ sbus_decode(uint64_t frame_time, uint8_t *frame, uint16_t *values, uint16_t *num
 
 
 		/* convert 0-2048 values to 1000-2000 ppm encoding in a not too sloppy fashion */
+		//终于找到了这就是PX4IO里面最原始的遥控器数据
+		//终于找到了这就是PX4IO里面最原始的遥控器数据
+		//遥控器数据这里发出 到FMU：px4io.cpp -> sensor.cpp ->manual_control_setpoint
+		//遥控器数据这里发出 到FMU：px4io.cpp -> sensor.cpp ->manual_control_setpoint
+		//values[0]   channal 1 是roll通道当然这是地面站里面设置的
+		//values[6]   channal 7 是襟翼通道当然这是地面站里面设置的
+		//values[5]  是我地面站设置的channal 6 gear三段开关
 		values[channel] = (uint16_t)(value * SBUS_SCALE_FACTOR + .5f) + SBUS_SCALE_OFFSET;
+		
 	}
 
 	/* decode switch channels if data fields are wide enough */

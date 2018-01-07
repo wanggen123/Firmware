@@ -246,12 +246,12 @@ mixer_tick(void)
 		/* mix */
 
 		/* poor mans mutex */
-		//互斥，解析脚本
+		//11 互斥，解析脚本
 		in_mixer = true;
 		mixed = mixer_group.mix(&outputs[0], PX4IO_SERVO_COUNT, &r_mixer_limits);
 		in_mixer = false;
 
-		//计算pwm输出
+		//22 计算pwm输出
 		/* the pwm limit call takes care of out of band errors */
 		pwm_limit_calc(should_arm, should_arm_nothrottle, mixed, r_setup_pwm_reverse, r_page_servo_disarmed,
 			       r_page_servo_control_min, r_page_servo_control_max, outputs, r_page_servos, &pwm_limit);

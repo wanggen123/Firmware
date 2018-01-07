@@ -170,6 +170,7 @@ controls_init(void)
 	_sbus_fd = sbus_init("/dev/ttyS2", false);
 
 	/* default to a 1:1 input map, all enabled */
+	//   PX4IO_RC_INPUT_CHANNELS	18
 	for (unsigned i = 0; i < PX4IO_RC_INPUT_CHANNELS; i++) {
 		unsigned base = PX4IO_P_RC_CONFIG_STRIDE * i;
 
@@ -249,6 +250,12 @@ controls_tick()
 	perf_begin(c_gather_sbus);
 
 	bool sbus_failsafe, sbus_frame_drop;
+	
+	//PX4IO协处理器获取RC遥控器数据
+	//r_raw_rc_values数据里面放的就是遥控器的数据
+	//r_raw_rc_count遥控器的通道
+	//sbus_input在src/lib/rc/sbus.c中实现
+	
 	bool sbus_updated = sbus_input(_sbus_fd, r_raw_rc_values, &r_raw_rc_count, &sbus_failsafe, &sbus_frame_drop,
 				       PX4IO_RC_INPUT_CHANNELS);
 

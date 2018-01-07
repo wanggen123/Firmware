@@ -100,6 +100,11 @@ extern uint16_t			r_page_servo_disarmed[];	/* PX4IO_PAGE_DISARMED_PWM */
 #define r_status_flags		r_page_status[PX4IO_P_STATUS_FLAGS]
 #define r_status_alarms		r_page_status[PX4IO_P_STATUS_ALARMS]
 
+
+//遥控器的数据
+//PX4IO协处理器中的遥控器数据在这
+//寄存器形式  r_raw_rc_count  r_raw_rc_values
+
 #define r_raw_rc_count		r_page_raw_rc_input[PX4IO_P_RAW_RC_COUNT]
 #define r_raw_rc_values		(&r_page_raw_rc_input[PX4IO_P_RAW_RC_BASE])
 #define r_raw_rc_flags		r_page_raw_rc_input[PX4IO_P_RAW_RC_FLAGS]

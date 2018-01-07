@@ -146,6 +146,16 @@ SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scale
 	return 0;
 }
 
+
+
+
+
+
+
+
+
+
+
 SimpleMixer *
 SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, const char *buf, unsigned &buflen)
 {
@@ -178,7 +188,6 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 	//这就是混控器脚本中 M：后面的数字，几组累加
 	//如果这里设置为1 这样设置mixinfo->control_count = inputs =1;
 	//那么最终只会计算第一个 S：，不再计算第二个S：
-	mixinfo->control_count = inputs;
 
 	if (parse_output_scaler(end - buflen, buflen, mixinfo->output_scaler)) {
 		debug("simple mixer parser failed parsing out scaler tag, ret: '%s'", buf);
