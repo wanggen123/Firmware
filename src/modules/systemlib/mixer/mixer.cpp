@@ -72,7 +72,7 @@ Mixer::get_control(uint8_t group, uint8_t index)
 	return value;
 }
 
-
+//混控计算过程七 M类型正负缩放 偏移 限幅 mix的过程   （可全局搜索混控计算过程）
 float
 Mixer::scale(const mixer_scaler_s &scaler, float input)
 {
@@ -92,6 +92,7 @@ Mixer::scale(const mixer_scaler_s &scaler, float input)
 		output = scaler.min_output;
 	}
 
+	//这就是输出的“O”，范围【-10000，+10000】
 	return output;
 }
 

@@ -1276,31 +1276,25 @@ FixedwingAttitudeControl::task_main()
 			_actuators.control[7] = _manual.aux3;
 
 
+			//襟翼三种控制模式三（全局搜索襟翼三种控制模式可以查看修改）
 			//下面这段代码开始做襟翼控制模式的区分处理，单独的襟翼 襟副翼一体 butterfly襟翼，上面正常的姿态控制都没动
-			//上面正常的姿态控制 roll pitch yaw throttle 都没动，这是在上面注释了襟翼控制量由RC获取的过程
+			//把襟翼控制量根据_flap_mode = _manual.gear_switch区分填充到_actuators.control[7] ;
+			//在AETR混控中实现襟翼控制量在副翼中的区别叠加，从而区分实现襟翼 襟副翼一体 butterfly
 			switch(_flap_mode)
 			{
-				case 3: //单独襟翼控制
-					warnx("f=%d",3);
-
+				case 3:   //襟副翼一体
+					_actuators.control[7]=_flaps_applied;
 					break;
 
-				case 2: //襟副翼一体控制
-					warnx("l=%d",2);
-
-
+				case 2:   //单独襟翼
+					_actuators.control[7]=0;
 					break;
 
-				case 1: //butterfly襟副翼控制
-					warnx("a=%d",1);
-					_actuators.control[actuator_controls_s::INDEX_ROLL]=1;
-					_actuators.control[actuator_controls_s::INDEX_FLAPS]=1;
-					warnx("flap=%8.4f",(double)_actuators.control[actuator_controls_s::INDEX_FLAPS]);
-					warnx("roll=%8.4f",(double)_actuators.control[actuator_controls_s::INDEX_ROLL]);
-
+				case 1:   //butterfly
+					_actuators.control[7]=-_flaps_applied;
 					break;
 				default:
-					warnx("p=%d",-1);
+					_actuators.control[7]=0;
  			  		break;
 			}
 

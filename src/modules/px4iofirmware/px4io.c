@@ -239,7 +239,7 @@ calculate_fw_crc(void)
 
 
 
-//user_start  在启动脚本中 主处理器和协处理器的启动过程
+//user_start 协处理器的入口函数
 //这是协处理器启动的入口，忘了，再百度下“PIXHAWK的启动过程”
 
 int
@@ -378,12 +378,14 @@ user_start(int argc, char *argv[])
 
 		/* kick the mixer */
 		perf_begin(mixer_perf);
+		//混控计算过程二  （可全局搜索混控计算过程）
+		//这里面是mix混合计算和pwm输出的的地方，循环执行
 		mixer_tick();
 		perf_end(mixer_perf);
 
 		/* kick the control inputs */
 		perf_begin(controls_perf);
-		//这个里面层层跟踪，进行和遥控器数据的获取
+		//这个里面层层跟踪，进行和遥控器数据的获取，循环执行
 		controls_tick();
 		perf_end(controls_perf);
 

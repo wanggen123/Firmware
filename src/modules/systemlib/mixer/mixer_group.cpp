@@ -98,12 +98,20 @@ MixerGroup::reset()
 	}
 }
 
+
+//混控计算过程四 mix计算   （可全局搜索混控计算过程）
+//px4iofirmware/mixer.cpp调用   mixed = mixer_group.mix(&outputs[0], PX4IO_SERVO_COUNT, &r_mixer_limits);
+//此函数讲MixerGroup链表中的每个“M” 进行混合计算
 unsigned
 MixerGroup::mix(float *outputs, unsigned space, uint16_t *status_reg)
 {
+	//*mixer指针，指向当前是计算链表中的哪个“M”
+	//index是链表中有几个“R M Z”
 	Mixer	*mixer = _first;
 	unsigned index = 0;
 
+	//依次计算每个 “R M Z”，计算的结果依次放到数组outputs【】
+	// mixer->mix根据不同　“R M Z”依次去调用他们的计算
 	while ((mixer != nullptr) && (index < space)) {
 		index += mixer->mix(outputs + index, space - index, status_reg);
 		mixer = mixer->_next;
@@ -137,6 +145,14 @@ MixerGroup::groups_required(uint32_t &groups)
 	}
 }
 
+
+
+
+//混控调用第三层
+//MixerGroup
+//根据 Z M R分别进行解析
+//他调用了第四层from_text
+//谁在调用他  px4iofirmware/mixer.cpp调用了  协处理器进行pwm计算输出。
 int
 MixerGroup::load_from_buf(const char *buf, unsigned &buflen)
 {

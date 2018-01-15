@@ -240,18 +240,20 @@ mixer_tick(void)
 			mixer_group.set_max_delta_out_once(delta_out_max);
 		}
 
+		//混控计算过程三   （可全局搜索混控计算过程）
 
 		//下面这段代码很重要，mixer的解析与计算过程，对于pixracer这些功能在fmu.cpp里面实现
-
-		/* mix */
+		
+		//循环执行计算pwm
+		//r_rc_values[]数组在px4io.h中定义，里面[0][1][2][3]这些放的是遥控器通道0 1 2 3的数据		
 
 		/* poor mans mutex */
-		//11 互斥，解析脚本
+		//注意我们平时所说的mix的过程实际计算在下面的“mix”里，outputs[]数据已经是每个pwm mix计算完成后的结果，就是outputs[]里面放的好几个”S“已经融合完成，就是outputs[]里面放的是“O”
 		in_mixer = true;
 		mixed = mixer_group.mix(&outputs[0], PX4IO_SERVO_COUNT, &r_mixer_limits);
 		in_mixer = false;
 
-		//22 计算pwm输出
+		//r_page_servos是根据pwm状态机计算出来用来真实从io端口驱动的pwm值，范围是【1000，2000】
 		/* the pwm limit call takes care of out of band errors */
 		pwm_limit_calc(should_arm, should_arm_nothrottle, mixed, r_setup_pwm_reverse, r_page_servo_disarmed,
 			       r_page_servo_control_min, r_page_servo_control_max, outputs, r_page_servos, &pwm_limit);
@@ -262,6 +264,8 @@ mixer_tick(void)
 			outputs[i] = 0.0f;
 		}
 
+		//outputs[]是一个控制计算完成后的值，是一个个R M Z混合计算后的每个IO口的pwm原始值，计算完成后的O输出，范围应该在[-1,1]
+		//写到寄存器，反馈到px4io.cpp主处理器中
 		/* store normalized outputs */
 		for (unsigned i = 0; i < PX4IO_SERVO_COUNT; i++) {
 			r_page_actuators[i] = FLOAT_TO_REG(outputs[i]);
@@ -328,6 +332,7 @@ mixer_tick(void)
 	}
 }
 
+//混控计算过程六 回调获取主处理器控制量   （可全局搜索混控计算过程）
 static int
 mixer_callback(uintptr_t handle,
 	       uint8_t control_group,
@@ -340,7 +345,8 @@ mixer_callback(uintptr_t handle,
 
 
 	//拿控制量，根据不同类型，从不同寄存器中拿控制量
-	//control就是混控器控制量的输入
+	//control就是混控器控制量的输入,来自px4io。cpp PX4FMU写寄存器的
+	//根据某个组 某个index拿控制量，一次拿一个 参与混合mix
 	
 	switch (source) {
 	case MIX_FMU:
@@ -440,6 +446,7 @@ mixer_callback(uintptr_t handle,
 static char mixer_text[200];		/* large enough for one mixer */
 static unsigned mixer_text_length = 0;
 
+//混控脚本解析一 
 int
 mixer_handle_text(const void *buffer, size_t length)
 {
@@ -491,8 +498,14 @@ mixer_handle_text(const void *buffer, size_t length)
 		mixer_text[mixer_text_length] = '\0';
 		isr_debug(2, "buflen %u", mixer_text_length);
 
-		/* process the text buffer, adding new mixers as their descriptions can be parsed */
+		//混控脚本解析二
+		//混控器脚本的解析，调用了systemlib/mix
 		unsigned resid = mixer_text_length;
+		/* process the text buffer, adding new mixers as their descriptions can be parsed */
+		//这里是混控器开始解析的开始
+		//向下调用load_from_buf
+		//构造混控器组
+
 		mixer_group.load_from_buf(&mixer_text[0], resid);
 
 		/* if anything was parsed */

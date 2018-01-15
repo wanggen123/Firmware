@@ -72,6 +72,8 @@ SimpleMixer::~SimpleMixer()
 	}
 }
 
+
+//解析混控器脚本中的输出 O
 int
 SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler)
 {
@@ -107,6 +109,9 @@ SimpleMixer::parse_output_scaler(const char *buf, unsigned &buflen, mixer_scaler
 
 	return 0;
 }
+
+
+//解析混控器脚本中的输入 S
 
 int
 SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scaler_s &scaler, uint8_t &control_group,
@@ -154,8 +159,11 @@ SimpleMixer::parse_control_scaler(const char *buf, unsigned &buflen, mixer_scale
 
 
 
-
-
+//混控调用第四层
+//mixer脚本的解析函数
+//调用了 parse_output_scaler  解析混控器脚本中的输出 O
+//调用了 parse_control_scaler 解析混控器脚本中的输入 S
+//谁在调用它 MixerGroup::load_from_buf调用它
 SimpleMixer *
 SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, const char *buf, unsigned &buflen)
 {
@@ -189,6 +197,9 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 	//如果这里设置为1 这样设置mixinfo->control_count = inputs =1;
 	//那么最终只会计算第一个 S：，不再计算第二个S：
 
+	mixinfo->control_count = inputs;
+
+	//解析混控器脚本中的输出 O
 	if (parse_output_scaler(end - buflen, buflen, mixinfo->output_scaler)) {
 		debug("simple mixer parser failed parsing out scaler tag, ret: '%s'", buf);
 		goto out;
@@ -203,6 +214,7 @@ SimpleMixer::from_text(Mixer::ControlCallback control_cb, uintptr_t cb_handle, c
 	// scaler.min_output	= s[3] / 10000.0f;
 	// scaler.max_output	= s[4] / 10000.0f;
 
+	//解析混控器脚本中的输入 S
 	for (unsigned i = 0; i < inputs; i++) {
 		if (parse_control_scaler(end - buflen, buflen,
 					 mixinfo->controls[i].scaler,
@@ -295,6 +307,11 @@ out:
 	return sm;
 }
 
+//混控计算过程五 M类型mix的过程   （可全局搜索混控计算过程）
+// M: 2
+// O:      -10000  -10000      0 -10000  10000
+// S: 0 0   10000   10000      0 -10000  10000
+// S: 0 4  -10000  -10000      0 -10000  10000
 unsigned
 SimpleMixer::mix(float *outputs, unsigned space, uint16_t *status_reg)
 {
@@ -308,17 +325,22 @@ SimpleMixer::mix(float *outputs, unsigned space, uint16_t *status_reg)
 		return 0;
 	}
 
+	//一共是多少个“S”   _pinfo->control_count个“S”混合成“O”
 	for (unsigned i = 0; i < _pinfo->control_count; i++) {
 		float input;
 
+		//这里回调函数就是解析脚本，拿到每个“S”哪一行
+		//下面的input就是控制量：如S：0 0 ，0号控制组0号idex roll的控制量
 		_control_cb(_cb_handle,
 			    _pinfo->controls[i].control_group,
 			    _pinfo->controls[i].control_index,
 			    input);
-
+		// _pinfo->control_count个“S”依次累
+		//这里的scale是每个“M”的计算过程
 		sum += scale(_pinfo->controls[i].scaler, input);
 	}
 
+	//这里的scale是每个“O”的缩放计算的过程
 	*outputs = scale(_pinfo->output_scaler, sum);
 	return 1;
 }

@@ -2228,6 +2228,7 @@ Sensors::rc_poll()
 			//			 _parameters.rc_gear_th, _parameters.rc_gear_inv);			
 
 
+			//襟翼三种控制模式二（全局搜索襟翼三种控制模式可以查看修改）
 			//上述屏蔽的是原来gear_switch的两段式处理get_rc_sw2pos_position。
 			//这里我采用三段式开关处理gear_switch，gear_switch原本只在mc_pos_control_main.cpp中用于旋翼起落架的控制
 			//这里我修改为三段式开关，想用这个开关来实现 襟翼单独控制 襟副翼一体控制 butterfly这三中襟翼控制的区分
@@ -2237,7 +2238,7 @@ Sensors::rc_poll()
 							  
 			// warnx("gear_switch=%d",manual.gear_switch);//这里我采用三段式开关处理gear_switch，得到的数值是1 2 3
 
-			// //打印验证这里是遥控器数据的获取与发布的地方
+			// //打印验证这里是遥控器数据的获取与发布的地方，范围1000-2000
 			// warnx("roll=%8.4f",(double)manual.y);
 			// warnx("pitch=%8.4f",(double)manual.x);
 			// warnx("flaps=%8.4f",(double)manual.flaps);

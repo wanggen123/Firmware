@@ -1387,6 +1387,7 @@ PX4IO::io_set_control_state(unsigned group)
 			ctrl = 1.0f;
 		}
 
+		//把att_control计算的控制量 乘以1000，转化为uint16_t，放到寄存器中PX4IO_PAGE_CONTROLS，给PX4IO协处理器调用mix计算pwm使用。
 		regs[i] = FLOAT_TO_REG(ctrl);
 	}
 
@@ -1394,7 +1395,14 @@ PX4IO::io_set_control_state(unsigned group)
 	if (group == 0) {
 		_last_throttle = controls.control[3];
 	}
-
+		//混控计算过程一 （可全局搜索混控计算过程）
+		//把att_control计算的控制量 乘以1000，转化为uint16_t，放到寄存器中PX4IO_PAGE_CONTROLS，给PX4IO协处理器调用mix计算pwm使用。
+		//取出这个控制量的过程在，可以参考systemlib/mixer/mixer_simple.cpp
+		//具体取出控制量的过程是调用调用下面一句，这就是混控脚本中的 S：
+		// _control_cb(_cb_handle,
+		// 	    _pinfo->controls[i].control_group,
+		// 	    _pinfo->controls[i].control_index,
+		// 		input);
 	if (!_test_fmu_fail) {
 		/* copy values to registers in IO */
 		return io_reg_set(PX4IO_PAGE_CONTROLS, group * PX4IO_PROTOCOL_MAX_CONTROL_COUNT, regs, _max_controls);
@@ -1924,6 +1932,7 @@ PX4IO::io_get_raw_rc_input(rc_input_values &input_rc)
 		}
 	}
 
+	//下面是从协处理器中拿到的遥控器数据的原始值 input_rc.values[i]
 	/* last thing set are the actual channel values as 16 bit values */
 	for (unsigned i = 0; i < channel_count; i++) {
 		input_rc.values[i] = regs[prolog + i];
@@ -2008,6 +2017,8 @@ PX4IO::io_publish_pwm_outputs()
 		return ret;
 	}
 
+	//下面是从协处理器里拿到的 每个pwm输出 mix计算的结果，范围【-1，+1】
+	//在协处理器 mix.cpp中写到寄存器中的 r_page_actuators[i] = FLOAT_TO_REG(outputs[i]);
 	/* convert from register format to float */
 	for (unsigned i = 0; i < _max_actuators; i++) {
 		outputs.output[i] = ctl[i];
