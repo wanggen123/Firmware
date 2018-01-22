@@ -75,16 +75,25 @@ Loiter::on_inactive()
 	_loiter_pos_set = false;
 }
 
+
+//悬停 分为在哪个点悬停：当前位置 还是指定悬停位置
+
 void
 Loiter::on_activation()
 {
+	//指点飞行，飞机处于悬停状态时 我们给个指令 从A点飞往B点
 	if (_navigator->get_reposition_triplet()->current.valid) {
-		reposition();
+		reposition(); //
 
-	} else {
-		set_loiter_position();
+	} 
+	//正常的悬停进入
+	else {
+		set_loiter_position(); //设置悬停点，分为指定点还是当前点
 	}
 }
+
+
+//悬停状态下 是否可以指定飞行
 
 void
 Loiter::on_active()
@@ -94,23 +103,28 @@ Loiter::on_active()
 	}
 
 	// reset the loiter position if we get disarmed
+	//如果飞机已经上锁，赋值标志，跳出
 	if (_navigator->get_vstatus()->arming_state != vehicle_status_s::ARMING_STATE_ARMED) {
 		_loiter_pos_set = false;
 	}
 }
 
 void
-Loiter::set_loiter_position()
+Loiter::set_loiter_position()  //正常的悬停 设置悬停点，指定点还是当前位置
 {
 	// not setting loiter position until armed
+	//上锁状态，直接返回
 	if (_navigator->get_vstatus()->arming_state != vehicle_status_s::ARMING_STATE_ARMED ||
 	    _loiter_pos_set) {
 		return;
 
-	} else {
+	} 
+	else //第一次进来
+	{
 		_loiter_pos_set = true;
 	}
 
+	//设置悬停点，分为指定点还是当前点
 	// set current mission item to loiter
 	set_loiter_item(&_mission_item, _param_min_alt.get());
 
@@ -127,34 +141,39 @@ Loiter::set_loiter_position()
 }
 
 void
-Loiter::reposition()
+Loiter::reposition()  	//悬停状态下的指点飞行
 {
 	// we can't reposition if we are not armed yet
 	if (_navigator->get_vstatus()->arming_state != vehicle_status_s::ARMING_STATE_ARMED) {
 		return;
 	}
 
+	//获取指点飞行的航点信息rep
 	struct position_setpoint_triplet_s *rep = _navigator->get_reposition_triplet();
 
-	if (rep->current.valid) {
+	//航点信息有效
+	if (rep->current.valid) { 
 		// set loiter position based on reposition command
-
 		// convert mission item to current setpoint
+		//获取航点储存的空间
 		struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 		pos_sp_triplet->current.velocity_valid = false;
+		//当前位置设置为previous
 		pos_sp_triplet->previous.yaw = _navigator->get_global_position()->yaw;
 		pos_sp_triplet->previous.lat = _navigator->get_global_position()->lat;
 		pos_sp_triplet->previous.lon = _navigator->get_global_position()->lon;
 		pos_sp_triplet->previous.alt = _navigator->get_global_position()->alt;
+		//指点的位置设置为current
 		memcpy(&pos_sp_triplet->current, &rep->current, sizeof(rep->current));
 		pos_sp_triplet->next.valid = false;
 
-		// set yaw
-
+		// set yaw 设置偏航方向，如果当前位置距离指定点很远，调整方向指向current
+		//计算下当前到目标点的距离
 		float travel_dist = get_distance_to_next_waypoint(_navigator->get_global_position()->lat,
 				    _navigator->get_global_position()->lon,
 				    pos_sp_triplet->current.lat, pos_sp_triplet->current.lon);
 
+		//当前到目标点很远，需要将飞机的航向调整为 指向目标点
 		if (travel_dist > 1.0f) {
 			// calculate direction the vehicle should point to.
 			pos_sp_triplet->current.yaw = get_bearing_to_next_waypoint(
@@ -164,11 +183,13 @@ Loiter::reposition()
 							      pos_sp_triplet->current.lon);
 		}
 
+		//能否在目标点悬停
 		_navigator->set_can_loiter_at_sp(pos_sp_triplet->current.type == position_setpoint_s::SETPOINT_TYPE_LOITER);
 
+		//通知位置控制结构体更新
 		_navigator->set_position_setpoint_triplet_updated();
 
-		// mark this as done
+		// 清空rep结构体，防止rep重复执行多次
 		memset(rep, 0, sizeof(*rep));
 	}
 }

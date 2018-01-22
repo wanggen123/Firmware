@@ -588,20 +588,23 @@ MissionBlock::set_loiter_item(struct mission_item_s *item, float min_clearance)
 {
 	if (_navigator->get_land_detected()->landed) {
 		/* landed, don't takeoff, but switch to IDLE mode */
-		item->nav_cmd = NAV_CMD_IDLE;
+		item->nav_cmd = NAV_CMD_IDLE; //如果已经落地
 
 	} else {
-		item->nav_cmd = NAV_CMD_LOITER_UNLIMITED;
+		item->nav_cmd = NAV_CMD_LOITER_UNLIMITED; //默认是无限制的悬停
 
 		struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 
+		//根据pos_sp在指定位置悬停
 		if (_navigator->get_can_loiter_at_sp() && pos_sp_triplet->current.valid) {
 			/* use current position setpoint */
 			item->lat = pos_sp_triplet->current.lat;
 			item->lon = pos_sp_triplet->current.lon;
 			item->altitude = pos_sp_triplet->current.alt;
 
-		} else {
+		} 
+		//否则在当前位置悬停
+		else {
 			/* use current position and use return altitude as clearance */
 			item->lat = _navigator->get_global_position()->lat;
 			item->lon = _navigator->get_global_position()->lon;
