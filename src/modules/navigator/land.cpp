@@ -69,37 +69,59 @@ Land::on_inactive()
 {
 }
 
+
+
+//飞行模式处理中 pos_sp_triplet会发布两次，影响后面位置控制
+//第一次初始化航点，如takeoff起飞点，land降落点
+//任务完成后，发布新的航点，虽然位置没变，但是类型发生了改变，是在当前点悬停还是idle
+
+//航点处理的流程分为三步：
+//第一步 set_×××_item(&_mission_item, ××××); 打包航点信息到_mission_item
+//第二步 将mission_item赋值给position_setpoint_triplet current setpoint
+//第三步 通知pos_sp_triplet航点信息更新完成，通知位置控制开始做新的控制
+
 void
 Land::on_activation()
 {
-	/* set current mission item to Land */
-	set_land_item(&_mission_item, true);
+	//是否在当前位置降落，还是在home点降落，打包航点信息到_mission_item
+	set_land_item(&_mission_item, true); 
+	//更新标志
 	_navigator->get_mission_result()->reached = false;
 	_navigator->get_mission_result()->finished = false;
 	_navigator->set_mission_result_updated();
 	reset_mission_item_reached();
 
-	/* convert mission item to current setpoint */
+	//将mission_item赋值给current setpoint
 	struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 	pos_sp_triplet->previous.valid = false;
 	mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
 	pos_sp_triplet->next.valid = false;
 
+	//飞机是否在那个点悬停，land当然不需要悬停
 	_navigator->set_can_loiter_at_sp(false);
 
+	//航点信息更新完成
 	_navigator->set_position_setpoint_triplet_updated();
 }
 
 void
 Land::on_active()
 {
-	if (is_mission_item_reached() && !_navigator->get_mission_result()->finished) {
-		_navigator->get_mission_result()->finished = true;
-		_navigator->set_mission_result_updated();
-		set_idle_item(&_mission_item);
+	//降落是否已经完成，降落已经完成的话，将当前任务设置为idle，继而影响位置控制
+	if (is_mission_item_reached() && !_navigator->get_mission_result()->finished) 
+	{
+		//更新标志，任务完成
+		_navigator->get_mission_result()->finished = true; 
+		_navigator->set_mission_result_updated();  
 
+		//任务完成，设置当前为idle，位置信息没改变，但是改变了航点类型
+		set_idle_item(&_mission_item);   
+
+		//将mission_item赋值给current setpoint，通知位置控制pos_sp_triplet航点信息更新完成
 		struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 		mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
 		_navigator->set_position_setpoint_triplet_updated();
 	}
+	
+	//降落还没完成，nothing
 }
