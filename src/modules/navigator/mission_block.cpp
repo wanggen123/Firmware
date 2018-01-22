@@ -667,7 +667,7 @@ MissionBlock::set_takeoff_item(struct mission_item_s *item, float abs_altitude, 
 	item->altitude = abs_altitude;
 	item->altitude_is_relative = false;
 
-	item->yaw = NAN;
+	item->yaw = NAN; //yaw不控制
 	item->loiter_radius = _navigator->get_loiter_radius();
 	item->pitch_min = min_pitch;
 	item->autocontinue = false;

@@ -419,6 +419,19 @@ Navigator::task_main()
 			home_position_update();
 		}
 
+
+
+
+		//navigator入口流程一 （可全局搜索navigator入口流程）
+		//根据vehicle_command.msg里面的command命令，执行航点动作，这个command来自地面站，是mavlink消息一部分
+		//这里command有：
+		//VEHICLE_CMD_DO_REPOSITION
+		//VEHICLE_CMD_NAV_TAKEOFF
+		//VEHICLE_CMD_DO_LAND_START
+		//VEHICLE_CMD_MISSION_START
+		//VEHICLE_CMD_DO_PAUSE_CONTINUE
+		//可以收起括号，看到这5个command。根据mavlink消息参数，填充rep，从在飞行模式cpp文件中调用。
+
 		orb_check(_vehicle_command_sub, &updated);
 		if (updated) {
 			vehicle_command_s cmd;
@@ -463,9 +476,13 @@ Navigator::task_main()
 				rep->previous.valid = true;
 				rep->current.valid = true;
 				rep->next.valid = false;
-			} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_NAV_TAKEOFF) {
-				struct position_setpoint_triplet_s *rep = get_takeoff_triplet();
-
+			} 
+			
+			//rep代表offboard发来的航点
+			//定义一个指针rep指向 &_takeoff_triplet，其实定义rep获取一片空间，下面进行内容填充。
+			//下面从mavlink参数中 开始填充这个takeoff航点内容，起飞到那个经度 纬度 高度
+			else if (cmd.command == vehicle_command_s::VEHICLE_CMD_NAV_TAKEOFF) {
+				struct position_setpoint_triplet_s *rep = get_takeoff_triplet(); 
 				// store current position as previous position and goal as next
 				rep->previous.yaw = get_global_position()->yaw;
 				rep->previous.lat = get_global_position()->lat;
@@ -510,7 +527,9 @@ Navigator::task_main()
 					(void)orb_unadvertise(pub);
 				}
 
-			} else if (cmd.command == vehicle_command_s::VEHICLE_CMD_MISSION_START) {
+			} 
+			// offboard mission类型
+			else if (cmd.command == vehicle_command_s::VEHICLE_CMD_MISSION_START) {
 
 				if (get_mission_result()->valid &&
 					PX4_ISFINITE(cmd.param1) && (cmd.param1 >= 0) && (cmd.param1 < _mission_result.seq_total)) {
@@ -522,6 +541,8 @@ Navigator::task_main()
 				PX4_INFO("got pause/continue command");
 			}
 		}
+
+
 
 		/* Check geofence violation */
 		static hrt_abstime last_geofence_check = 0;
@@ -553,7 +574,12 @@ Navigator::task_main()
 			}
 		}
 
-		/* Do stuff according to navigation state set by commander */
+
+
+
+		//navigator入口流程二 （可全局搜索navigator入口流程）
+		//vehicle_status.msg中的nav_state为commander文件夹中处理得到的最终飞行模式
+		
 		switch (_vstatus.nav_state) {
 			case vehicle_status_s::NAVIGATION_STATE_AUTO_MISSION:
 				_pos_sp_triplet_published_invalid_once = false;
@@ -631,10 +657,15 @@ Navigator::task_main()
 				break;
 		}
 
+
+
+		//navigator入口流程三，飞行模式通过下面run开始调用处 （可全局搜索navigator入口流程）
 		/* iterate through navigation modes and set active/inactive for each */
 		for (unsigned int i = 0; i < NAVIGATOR_MODE_ARRAY_SIZE; i++) {
 			_navigation_mode_array[i]->run(_navigation_mode == _navigation_mode_array[i]);
 		}
+
+
 
 		/* if nothing is running, set position setpoint triplet invalid once */
 		if (_navigation_mode == nullptr && !_pos_sp_triplet_published_invalid_once) {
@@ -645,6 +676,9 @@ Navigator::task_main()
 			_pos_sp_triplet_updated = true;
 		}
 
+
+		//两个publish：position_setpoint_triplet 和 mission_result
+		
 		if (_pos_sp_triplet_updated) {
 			_pos_sp_triplet.timestamp = hrt_absolute_time();
 			publish_position_setpoint_triplet();

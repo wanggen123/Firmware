@@ -71,41 +71,72 @@ Takeoff::on_inactive()
 }
 
 void
-Takeoff::on_activation()
+Takeoff::on_activation() //takeoff切换模式第一次进来，准备起飞航点
 {
 	set_takeoff_position();
 }
 
 void
-Takeoff::on_active()
+Takeoff::on_active()     //周期性运行的函数
 {
 	struct position_setpoint_triplet_s *rep = _navigator->get_takeoff_triplet();
-	if (rep->current.valid) {
+	//即使在offboard模式下，on_activation（）函数的最后给结构体清空了，不会进来
+	if (rep->current.valid) { 
 		// reset the position
 		set_takeoff_position();
 
-	} else if (is_mission_item_reached() && !_navigator->get_mission_result()->finished) {
+	} 
+	//正常周期循环进来的地方
+	//判断是否已经到达航点，如果还没达到 不做任何处理，如果已经达到了，进入下面if
+	else if (is_mission_item_reached() && !_navigator->get_mission_result()->finished) 
+	{
+		//更新任务状态，航点已经完成了
 		_navigator->get_mission_result()->finished = true;
 		_navigator->set_mission_result_updated();
 
+		//设置飞机在当前位置悬停
 		// set loiter item so position controllers stop doing takeoff logic
-		set_loiter_item(&_mission_item);
+		set_loiter_item(&_mission_item);  //_mission_item  on_activation()函数中算的
+
+		//将当前悬停打包的航点_mission_item赋值到pos_sp_triplet，并通知位置控制航点更新了，不一定是位置更新可能是类型更新
 		struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
 		mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
 		_navigator->set_position_setpoint_triplet_updated();
 	}
+
+	//如果没有达到航点，nothing
 }
+
+
+
+//航点来源有三种：
+//offboard模式发来的参数
+//mission地面站设置的一系列航点（在dataman中进行这种航点管理）
+//如takeoff这种没人设置，飞控自己根据参数自己算的
 
 void
 Takeoff::set_takeoff_position()
 {
+	//整个函数主要功能是设置起飞航点，过程大概可以分成四步
+	//第一步 设置起飞高度，这个高度有三种：offboard传参进来的，遥控器切换模式默认高度，还有已经飞很高时此时切模式
+	//第二步 把航点信息打包到_mission_item结构体中
+	//第三步 再把_mission_item结构体 复制到pos_sp_triplet->current
+	//第四部 通知位置控制pos_sp_triplet更新了，你可以控制实现了
+
+
+	//下面高度逻辑，如果offboard发来高度，好啊，但是不能太低。如果没人设置就用飞控自己默认的高度，但是飞机都已经飞得很高了再切takeoff，那就hold吧
+
+	//offboard模式在会在navigator_main.cpp 482行源码里给_takeoff_triplet航点赋值
+	//rep表示offboard模式下给的航点信息
 	struct position_setpoint_triplet_s *rep = _navigator->get_takeoff_triplet();
 
+	//临时变量，用来保存offboard模式下对起飞高度的设置值
 	float abs_altitude = 0.0f;
 
+	//参数对起飞高度的最小限制，相对于home点的最小高度
 	const float min_abs_altitude = _navigator->get_home_position()->alt + _param_min_alt.get();
 
-	// Use altitude if it has been set.
+	// 如果offboard在起飞航点里设置了高度，那么则起飞到设置高度，但是起飞高度的设置是有参数底线的min_abs_altitude
 	if (rep->current.valid && PX4_ISFINITE(rep->current.alt)) {
 		abs_altitude = rep->current.alt;
 
@@ -115,7 +146,10 @@ Takeoff::set_takeoff_position()
 			mavlink_log_critical(_navigator->get_mavlink_log_pub(),
 					     "Using minimum takeoff altitude: %.2f m", (double)_param_min_alt.get());
 		}
-	} else {
+	}
+	
+	//不是offboard切换模式，而是正常的遥控器模式切换，起飞高度就是参数高度
+	else {
 		// Use home + minimum clearance but only notify.
 		abs_altitude = min_abs_altitude;
 		mavlink_log_info(_navigator->get_mavlink_log_pub(),
@@ -123,6 +157,8 @@ Takeoff::set_takeoff_position()
 	}
 
 
+	//如果当前已经飞的很高，此时切换到takeoff模式，那就在当前高度保持HOLD
+	//这是和实际飞行相对应的，实际中在很高时，切takeoff，飞机就是保持当前高度HOLD
 	if (abs_altitude < _navigator->get_global_position()->alt) {
 		// If the suggestion is lower than our current alt, let's not go down.
 		abs_altitude = _navigator->get_global_position()->alt;
@@ -130,21 +166,28 @@ Takeoff::set_takeoff_position()
 				     "Already higher than takeoff altitude");
 	}
 
+
+	
+	//第二步 把航点信息打包到_mission_item结构体中，并更新一些标志
 	// set current mission item to takeoff
 	set_takeoff_item(&_mission_item, abs_altitude);
-	_navigator->get_mission_result()->reached = false;
-	_navigator->get_mission_result()->finished = false;
-	_navigator->set_mission_result_updated();
+	_navigator->get_mission_result()->reached = false; //航点有没有达到 第一次进来没有达到
+	_navigator->get_mission_result()->finished = false;//任务有没有完成 第一次进来任务没有完成
+	_navigator->set_mission_result_updated(); //更新任务执行的结果
 	reset_mission_item_reached();
 
+
+	//第三步 再把_mission_item结构体 复制到pos_sp_triplet->current
 	// convert mission item to current setpoint
-	struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+	struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet(); //这是拿数据存储空间
 	pos_sp_triplet->previous.valid = false;
 	mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
 	pos_sp_triplet->current.yaw = _navigator->get_home_position()->yaw;
 	pos_sp_triplet->current.yaw_valid = true;
 	pos_sp_triplet->next.valid = false;
 
+
+	//offboard对偏航yaw 经纬度有设置吗？有，就是覆盖。最上面是offboard对高度的要求
 	if (rep->current.valid) {
 
 		// Go on and check which changes had been requested
@@ -157,11 +200,16 @@ Takeoff::set_takeoff_position()
 			pos_sp_triplet->current.lon = rep->current.lon;
 		}
 
-		// mark this as done
+		// 清空rep航点结构体，会影响on_active()函数
 		memset(rep, 0, sizeof(*rep));
 	}
 
+
+	//设置飞机完成takeoff后悬停
 	_navigator->set_can_loiter_at_sp(true);
 
+
+	//上面一系列处理就是为得到position_setpoint_triplet
+	//在navigator_main.cpp中发布，通知位置控制position_setpoint_triplet消息更新了，你可以去做takeoff动作了。
 	_navigator->set_position_setpoint_triplet_updated();
 }
