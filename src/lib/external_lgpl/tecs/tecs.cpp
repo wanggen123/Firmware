@@ -27,16 +27,21 @@ using namespace math;
  *
  */
 
+
+/*************************
+*
+* 对高度做一个三阶的互补滤波，最后得到平滑的高度和高度方向的速度；
+* _integ2_state 为滤波后高度方向的速度；
+* _integ3_state 为滤波后的高度
+* 参考文献：
+* Optimising the Gains of the Baro-Inertial Vertical Channel
+* Widnall W.S, Sinha P.K,
+* AIAA Journal of Guidance and Control, 78-1307R
+*
+**************************/
 void TECS::update_state(float baro_altitude, float airspeed, const math::Matrix<3,3> &rotMat,
 	const math::Vector<3> &accel_body, const math::Vector<3> &accel_earth, bool altitude_lock, bool in_air)
 {
-	// Implement third order complementary filter for height and height rate
-	// estimted height rate = _integ2_state
-	// estimated height     = _integ3_state
-	// Reference Paper :
-	// Optimising the Gains of the Baro-Inertial Vertical Channel
-	// Widnall W.S, Sinha P.K,
-	// AIAA Journal of Guidance and Control, 78-1307R
 
 	// Calculate time in seconds since last update
 	uint64_t now = ecl_absolute_time();
@@ -117,6 +122,13 @@ void TECS::update_state(float baro_altitude, float airspeed, const math::Matrix<
 
 }
 
+
+/*************************
+*
+* 计算空速，对传感器进来的值做一个二阶的互补滤波，然后得到一个空速的估计值。
+* 得到的空速值会存在 _integ5_state 这个量中，随后计算能量会使用。
+*
+**************************/
 void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 			 float indicated_airspeed_min, float indicated_airspeed_max, float EAS2TAS)
 {
@@ -124,7 +136,12 @@ void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 	uint64_t now = ecl_absolute_time();
 	float DT = max((now - _update_speed_last_usec), UINT64_C(0)) * 1.0e-6f;
 
-	// Convert equivalent airspeeds to true airspeeds
+	/*************************
+	*
+	* 将等效空速转换为实际的空速
+	* 其中EAS为等效空速，TAS为实际空速，一般情况下，两者比例为1
+	*
+	**************************/
 
 	_EAS_dem = airspeed_demand;
 	_TAS_dem  = _EAS_dem * EAS2TAS;
@@ -151,9 +168,11 @@ void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 		DT = DT_DEFAULT; // when first starting TECS, use small time constant
 	}
 
-	// Implement a second order complementary filter to obtain a
-	// smoothed airspeed estimate
-	// airspeed estimate is held in _integ5_state
+	/*************************
+	*
+	* _integ4_state 为空速的加速度，先对这个加速度量做一个滤波
+	*
+	**************************/
 	float aspdErr = (_EAS * EAS2TAS) - _integ5_state;
 	float integ4_input = aspdErr * _spdCompFiltOmega * _spdCompFiltOmega;
 
@@ -163,6 +182,14 @@ void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 	}
 
 	_integ4_state = _integ4_state + integ4_input * DT;
+
+
+	/*************************
+	*
+	* 空速度的加速度平滑完了之后，再对_integ5_state即空速做滤波；
+	* 最后做一个保护
+	*
+	**************************/
 	float integ5_input = _integ4_state + _vel_dot + aspdErr * _spdCompFiltOmega * 1.4142f;
 	_integ5_state = _integ5_state + integ5_input * DT;
 
@@ -171,6 +198,14 @@ void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 	_update_speed_last_usec = now;
 }
 
+/*************************
+*
+* 计算期望空速和期望空速的加速度，用来之后计算期望的动能和期望动能的变化率；
+* 在正常情况下，得到的期望空速等于输入的期望空速 _TAS_dem_adj = _TAS_dem；
+* 再通过一个增益控制得到期望空速的加速度：_TAS_rate_dem = (_TAS_dem_adj - _integ5_state) * _speedrate_p
+* 这里需要判断是否飞机处于失速状态，如果是失速状态，那么令期望空速为最小空速
+*
+**************************/
 void TECS::_update_speed_demand(void)
 {
 	// Set the airspeed demand to the minimum value if an underspeed condition exists
@@ -200,33 +235,19 @@ void TECS::_update_speed_demand(void)
 		velRateMin = 0.5f * _STEdot_min / _integ5_state;
 	}
 
-//	// Apply rate limit
-//	if ((_TAS_dem - _TAS_dem_adj) > (velRateMax * _DT)) {
-//		_TAS_dem_adj = _TAS_dem_adj + velRateMax * _DT;
-//		_TAS_rate_dem = velRateMax;
-//
-//	} else if ((_TAS_dem - _TAS_dem_adj) < (velRateMin * _DT)) {
-//		_TAS_dem_adj = _TAS_dem_adj + velRateMin * _DT;
-//		_TAS_rate_dem = velRateMin;
-//
-//	} else {
-//		_TAS_dem_adj = _TAS_dem;
-//
-//
-//	_TAS_rate_dem = (_TAS_dem - _TAS_dem_last) / _DT;
-//	}
-
 	_TAS_dem_adj = constrain(_TAS_dem, _TASmin, _TASmax);;
 	_TAS_rate_dem = constrain((_TAS_dem_adj - _integ5_state) * _speedrate_p, velRateMin, velRateMax); //xxx: using a p loop for now
 
-//	_TAS_dem_last = _TAS_dem;
-
-//	warnx("_TAS_rate_dem: %.1f, _TAS_dem_adj %.1f, _integ5_state %.1f, _badDescent %u , _underspeed %u, velRateMin %.1f",
-//			(double)_TAS_rate_dem, (double)_TAS_dem_adj, (double)_integ5_state, _badDescent, _underspeed, velRateMin);
-//	warnx("_TAS_rate_dem: %.1f, _TAS_dem_adj %.1f, _integ5_state %.1f,  _badDescent %u , _underspeed %u",
-//			(double)_TAS_rate_dem, (double)_TAS_dem_adj, (double)_integ5_state,  _badDescent , _underspeed);
 }
 
+/*************************
+*
+* 计算期望高度和期望爬升速度；
+* 高度为一阶互补滤波：_hgt_dem_adj = 0.1f * _hgt_dem + 0.9f * _hgt_dem_adj_last;
+* 再通过增益+前馈控制得到期望爬升率：
+* _hgt_rate_dem = (_hgt_dem_adj - state) * _heightrate_p + _heightrate_ff * (_hgt_dem_adj - _hgt_dem_adj_last) / _DT;
+*
+**************************/
 void TECS::_update_height_demand(float demand, float state)
 {
 	// Handle initialization
@@ -276,6 +297,12 @@ void TECS::_update_height_demand(float demand, float state)
 	//warnx("_hgt_rate_dem: %.4f, _hgt_dem_adj %.4f", _hgt_rate_dem, _hgt_dem_adj);
 }
 
+/*************************
+*
+* 检验有没有失速，失速判定条件为：
+* 小于最小空速且油门杆推满，或者，已经在失速中且高度小于期望高度
+*
+**************************/
 void TECS::_detect_underspeed(void)
 {
 	if (!_detect_underspeed_enabled) {
@@ -291,6 +318,15 @@ void TECS::_detect_underspeed(void)
 	}
 }
 
+/*************************
+*
+* 更新能量以及能量变化率的状态，
+* SPE为specific potential energy即单位质量的重力势能，为 h_dem*G；
+* SKE为specific kenematic energy即单位质量的动能，为 0.5*v_dem*v_dem；
+* _Energy_dem为期望的能量，_Energy_est为当前的能量；
+* _dot表示能量的变化率，为能量对时间求微分
+*
+**************************/
 void TECS::_update_energies(void)
 {
 	// Calculate specific energy demands
@@ -310,36 +346,44 @@ void TECS::_update_energies(void)
 	_SKEdot = _integ5_state * _vel_dot;
 }
 
+
+/*************************
+*
+* 利用前面得到的期望总能量和当前总能量，计算出期望的油门值。
+*
+**************************/
 void TECS::_update_throttle(float throttle_cruise, const math::Matrix<3,3> &rotMat)
 {
-	// Calculate total energy values
+	// 计算总能量的error
 	_STE_error = _SPE_dem - _SPE_est + _SKE_dem - _SKE_est;
 	float STEdot_dem = constrain((_SPEdot_dem + _SKEdot_dem), _STEdot_min, _STEdot_max);
+
+	// 计算总能量变化率的error
 	_STEdot_error = STEdot_dem - _SPEdot - _SKEdot;
 
-	// Apply 0.5 second first order filter to STEdot_error
-	// This is required to remove accelerometer noise from the  measurement
+	// 滤波，去除加速度计带来的噪音
 	_STEdot_error = 0.2f * _STEdot_error + 0.8f * _STEdotErrLast;
 	_STEdotErrLast = _STEdot_error;
 
-	// Calculate throttle demand
-	// If underspeed condition is set, then demand full throttle
+	// 如果失速了，那么直接推满油门！
 	if (_underspeed) {
 		_throttle_dem = 1.0f;
 
-	} else {
-		// Calculate gain scaler from specific energy error to throttle
+	}
+	//正常情况下，做PID+FF控制计算得到期望油门
+	else {
+		// 计算一个能量到油门的系数，类似于增益的kP
 		float K_STE2Thr = 1 / (_timeConstThrot * (_STEdot_max - _STEdot_min));
 
 		// Calculate feed-forward throttle
 		float ff_throttle = 0;
 		float nomThr = throttle_cruise;
-		// Use the demanded rate of change of total energy as the feed-forward demand, but add
-		// additional component which scales with (1/cos(bank angle) - 1) to compensate for induced
-		// drag increase during turns.
+
+		// 当飞机转弯的时候，阻力会大于平飞时候的阻力，这个时候加上系数补偿 (1/cos(bank angle) - 1)
 		float cosPhi = sqrtf((rotMat(0, 1) * rotMat(0, 1)) + (rotMat(1, 1) * rotMat(1, 1)));
 		STEdot_dem = STEdot_dem + _rollComp * (1.0f / constrain(cosPhi , 0.1f, 1.0f) - 1.0f);
 
+		//计算前馈项
 		if (STEdot_dem >= 0) {
 			ff_throttle = nomThr + STEdot_dem / _STEdot_max * (_THRmaxf - nomThr);
 
@@ -347,12 +391,11 @@ void TECS::_update_throttle(float throttle_cruise, const math::Matrix<3,3> &rotM
 			ff_throttle = nomThr - STEdot_dem / _STEdot_min * nomThr;
 		}
 
-		// Calculate PD + FF throttle and constrain to avoid blow-up of the integrator later
+		// PD+FF控制，完了之后做个保护
 		_throttle_dem = (_STE_error + _STEdot_error * _thrDamp) * K_STE2Thr + ff_throttle;
 		_throttle_dem = constrain(_throttle_dem, _THRminf, _THRmaxf);
 
-		// Rate limit PD + FF throttle
-		// Calculate the throttle increment from the specified slew time
+		// 依旧是保护，防止油门的变化率超过_throttle_slewrate
 		if (fabsf(_throttle_slewrate) > 0.01f) {
 			float thrRateIncr = _DT * (_THRmaxf - _THRminf) * _throttle_slewrate;
 			_throttle_dem = constrain(_throttle_dem,
@@ -368,8 +411,8 @@ void TECS::_update_throttle(float throttle_cruise, const math::Matrix<3,3> &rotM
 		float integ_max = (_THRmaxf - _throttle_dem + 0.1f);
 		float integ_min = (_THRminf - _throttle_dem - 0.1f);
 
-		// Calculate integrator state, constraining state
-		// Set integrator to a max throttle value during climbout
+
+		// 更新积分项，如果在爬升当中，那么直接将积分项给定为最大值，正常情况下，做保护
 		_integ6_state = _integ6_state + (_STE_error * _integGain) * _DT * K_STE2Thr;
 
 		if (_climbOutDem) {
@@ -379,8 +422,7 @@ void TECS::_update_throttle(float throttle_cruise, const math::Matrix<3,3> &rotM
 			_integ6_state = constrain(_integ6_state, integ_min, integ_max);
 		}
 
-		// Sum the components.
-		// Only use feed-forward component if airspeed is not being used
+		// 全部加起来，这里完成PID+FF控制
 		if (airspeed_sensor_enabled()) {
 			_throttle_dem = _throttle_dem + _integ6_state;
 
@@ -388,7 +430,7 @@ void TECS::_update_throttle(float throttle_cruise, const math::Matrix<3,3> &rotM
 			_throttle_dem = ff_throttle;
 		}
 
-		// Constrain throttle demand
+		// 保护
 		_throttle_dem = constrain(_throttle_dem, _THRminf, _THRmaxf);
 	}
 }
@@ -421,15 +463,23 @@ void TECS::_detect_bad_descent(void)
 	_badDescent = false;
 }
 
+
+/*************************
+*
+* 根据期望的能量转化率和当前的能量转化率计算期望油门值
+*
+**************************/
 void TECS::_update_pitch(void)
 {
-	// Calculate Speed/Height Control Weighting
-	// This is used to determine how the pitch control prioritises speed and height control
-	// A weighting of 1 provides equal priority (this is the normal mode of operation)
-	// A SKE_weighting of 0 provides 100% priority to height control. This is used when no airspeed measurement is available
-	// A SKE_weighting of 2 provides 100% priority to speed control. This is used when an underspeed condition is detected
-	// or during takeoff/climbout where a minimum pitch angle is set to ensure height is gained. In this instance, if airspeed
-	// rises above the demanded value, the pitch angle will be increased by the TECS controller.
+
+	/*************************
+	*
+	* 计算动能势能的控制权重。
+	* 1 代表两者一样，正常情况下该权重系数都为1；
+	* 0 代表势能控制，即此时不管俯仰角，只控高度，没有空速测量值的时候，会进入这种情况；
+	* 2 代表动能控制，失速、起飞、爬升会进入这种情况
+	*
+	**************************/
 	float SKE_weighting = constrain(_spdWeight, 0.0f, 2.0f);
 
 	if ((_underspeed || _climbOutDem) && airspeed_sensor_enabled()) {
@@ -441,16 +491,18 @@ void TECS::_update_pitch(void)
 
 	float SPE_weighting = 2.0f - SKE_weighting;
 
-	// Calculate Specific Energy Balance demand, and error
+	// Specific Energy Balance
+	// 计算能量转化率的期望，以及该转化率的变化率
 	float SEB_dem = _SPE_dem * SPE_weighting - _SKE_dem * SKE_weighting;
 	float SEBdot_dem = _SPEdot_dem * SPE_weighting - _SKEdot_dem * SKE_weighting;
 	_SEB_error = SEB_dem - (_SPE_est * SPE_weighting - _SKE_est * SKE_weighting);
 	_SEBdot_error = SEBdot_dem - (_SPEdot * SPE_weighting - _SKEdot * SKE_weighting);
 
-	// Calculate factor relating an error in specific energy to a desired delta pitch angle
+
+	// 计算从能量转化率到俯仰角的转换系数，类似于增益的kP
 	float gainInv = _integ5_state * _timeConst * CONSTANTS_ONE_G;
 
-	// Calculate integrator state, constraining input if pitch limits are exceeded
+	// 累加积分项以及饱和限制
 	float integ7_input = _SEB_error * _integGain;
 
 	// constrain the integrator input to prevent it changing in the direction that increases pitch demand saturation
@@ -462,10 +514,11 @@ void TECS::_update_pitch(void)
 		integ7_input = max(integ7_input, max((_PITCHminf - _pitch_dem_unc) * gainInv / _timeConst, 0.0f));
 	}
 
-	// pitch loop integration
+	// 更新pitch_dem项
 	_integ7_state = _integ7_state + integ7_input * _DT;
 
 	// Specific Energy Balance correction excluding integrator contribution
+	// PD+ff控制的第一步，计算能量转化率的error
 	float SEB_correction = _SEB_error + _SEBdot_error * _ptchDamp + SEBdot_dem * _timeConst;
 
 	// During climbout/takeoff, bias the demanded pitch angle so that zero speed error produces a pitch angle
@@ -475,14 +528,13 @@ void TECS::_update_pitch(void)
 		SEB_correction += _PITCHminf * gainInv;
 	}
 
-	// Calculate pitch demand from specific energy balance signals
+	// 将PD+ff控制的第二步，将能量转化率的error转换到期望的俯仰角
 	_pitch_dem_unc = (SEB_correction + _integ7_state) / gainInv;
 
 	// Constrain pitch demand
 	_pitch_dem = constrain(_pitch_dem_unc, _PITCHminf, _PITCHmaxf);
 
-	// Rate limit the pitch demand to comply with specified vertical
-	// acceleration limit
+	// 对pitch的角速度做限制，不会超出_vertAccLim
 	float ptchRateIncr = _DT * _vertAccLim / _integ5_state;
 
 	if ((_pitch_dem - _last_pitch_dem) > ptchRateIncr) {
@@ -552,6 +604,16 @@ void TECS::_update_STE_rate_lim(void)
 	_STEdot_min = - _minSinkRate * CONSTANTS_ONE_G;
 }
 
+
+/*************************
+*
+* Total Energy Control System的核心部分。
+* 根据当前的高度，空速，计算势能和动能，以及势能和动能的变化率，
+* 根据当前的期望高度，期望空速，计算期望的势能和动能，以及期望的势能和动能的变化率。
+* 1. 根据势能和动能的和，求出总能量，再根据期望总能量和实际总能量的差值，计算出期望油门(throttle_dem)。
+* 2. 根据势能和动能的差，求出能量转化率，再根据期望能量转化率和实际的能量转化率的差值，计算出期望的俯仰角(pitch_dem)。
+*
+**************************/
 void TECS::update_pitch_throttle(const math::Matrix<3,3> &rotMat, float pitch, float baro_altitude, float hgt_dem,
 				float EAS_dem, float indicated_airspeed, float EAS2TAS, bool climbOutDem, float ptchMinCO,
 				float throttle_min, float throttle_max, float throttle_cruise, float pitch_limit_min, float pitch_limit_max)
@@ -571,38 +633,101 @@ void TECS::update_pitch_throttle(const math::Matrix<3,3> &rotMat, float pitch, f
 	_PITCHminf = pitch_limit_min;
 	_climbOutDem = climbOutDem;
 
-	// initialise selected states and variables if DT > 1 second or in climbout
+
+	/*************************
+	* 初始化一些量，第一次进来这个函数会用到。
+	*
+	* _integ1_state <---- 高度的二阶导数，即高度方向的加速度；
+	* _integ2_state <---- 高度的一阶导数，即高度方向的速度；
+	* _integ3_state <---- 高度；
+	* _integ4_state <---- 空速的一阶导数，即空速的加速度；
+	* _integ5_state <---- 空速；
+	* _integ6_state <---- 油门的积分量；
+	* _integ7_state <---- pitch的积分量；
+	**************************/
 	_initialise_states(pitch, throttle_cruise, baro_altitude, ptchMinCO, EAS2TAS);
 
 	if (!_in_air) {
 		return;
 	}
 
-	// Update the speed estimate using a 2nd order complementary filter
+	/*************************
+	*
+	* 1. 计算当前的空速，对测量到的空速做一个二阶的低通滤波
+	*
+	**************************/
 	_update_speed(EAS_dem, indicated_airspeed, _indicated_airspeed_min, _indicated_airspeed_max, EAS2TAS);
 
-	// Calculate Specific Total Energy Rate Limits
+
+
+	/*************************
+	*
+	* 2. 计算动能的极值，当爬升速度最大或最小的时候，取到动能的极值
+	*
+	**************************/
 	_update_STE_rate_lim();
 
-	// Detect underspeed condition
+
+
+	/*************************
+	*
+	* 3. 检查有没有失速
+	*
+	**************************/
 	_detect_underspeed();
 
-	// Calculate the speed demand
+
+
+	/*************************
+	*
+	* 4. 计算期望空速和期望空速的加速度
+	*
+	**************************/
 	_update_speed_demand();
 
-	// Calculate the height demand
+
+
+
+	/*************************
+	*
+	* 5. 计算期望高度和期望爬升率
+	*
+	**************************/
 	_update_height_demand(hgt_dem, baro_altitude);
 
-	// Calculate specific energy quantitiues
+
+
+	/*************************
+	*
+	* 6. 计算单位质量的势能和动能_SPE\_SKE以及其变化率
+	*
+	**************************/
 	_update_energies();
 
-	// Calculate throttle demand
+
+
+	/*************************
+	*
+	* 7. 根据期望的总能量和当前的总能量计算期望油门值
+	*
+	**************************/
 	_update_throttle(throttle_cruise, rotMat);
 
-	// Detect bad descent due to demanded airspeed being too high
+
+	/*************************
+	*
+	* 该函数目前没有正常使用
+	*
+	**************************/
 	_detect_bad_descent();
 
-	// Calculate pitch demand
+
+
+	/*************************
+	*
+	* 8. 根据期望的能量转化率和当前的能量转化率计算期望油门值
+	*
+	**************************/
 	_update_pitch();
 
 	_tecs_state.timestamp = now;
@@ -618,6 +743,12 @@ void TECS::update_pitch_throttle(const math::Matrix<3,3> &rotMat, float pitch, f
 		_tecs_state.mode = ECL_TECS_MODE_NORMAL;
 	}
 
+
+	/*************************
+	*
+	* 以上的8个步骤完成后，读取得到期望的油门值和期望的pitch角
+	*
+	**************************/
 	_tecs_state.altitude_sp = _hgt_dem_adj;
 	_tecs_state.altitude_filtered = _integ3_state;
 	_tecs_state.altitude_rate_sp = _hgt_rate_dem;
