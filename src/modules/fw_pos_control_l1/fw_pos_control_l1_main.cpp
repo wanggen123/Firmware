@@ -980,6 +980,9 @@ FixedwingPositionControl::task_main_trampoline(int argc, char *argv[])
 	l1_control::g_control = nullptr;
 }
 
+
+// 控制过程梳理六（可本文件搜索，查看处理过程）
+//　下面是讲述如何将油门杆控制的是期望空速
 float
 FixedwingPositionControl::get_demanded_airspeed()
 {
@@ -988,12 +991,14 @@ FixedwingPositionControl::get_demanded_airspeed()
 	// neutral throttle corresponds to trim airspeed
 	if (_manual.z < 0.5f) {
 		// lower half of throttle is min to trim airspeed
+		//可带入０　0.5辅助理解，这里是把油门杆下一半杆量　映射为空速最小值　到巡航空速
 		altctrl_airspeed = _parameters.airspeed_min +
 				   (_parameters.airspeed_trim - _parameters.airspeed_min) *
 				   _manual.z * 2;
 
 	} else {
 		// upper half of throttle is trim to max airspeed
+		//可带入１　0.5辅助理解，这里是把油门杆上一半杆量　映射为巡航空速　到空速最大值
 		altctrl_airspeed = _parameters.airspeed_trim +
 				   (_parameters.airspeed_max - _parameters.airspeed_trim) *
 				   (_manual.z * 2 - 1);
@@ -1166,29 +1171,23 @@ float FixedwingPositionControl::get_terrain_altitude_takeoff(float takeoff_alt,
 	return takeoff_alt;
 }
 
+
+// 控制过程梳理七（可本文件搜索，查看处理过程）
+//　下面是讲述如何将pitch杆量转换为高度爬升率
 bool FixedwingPositionControl::update_desired_altitude(float dt)
 {
-	/*
-	 * The complete range is -1..+1, so this is 6%
-	 * of the up or down range or 3% of the total range.
-	 */
-	const float deadBand = 0.06f;
+	const float deadBand = 0.06f;  //杆量范围[-1,+1],杆量死区中位点上下３％
 
-	/*
-	 * The correct scaling of the complete range needs
-	 * to account for the missing part of the slope
-	 * due to the deadband
-	 */
+	//由于死区需要的缩放 The correct scaling of the complete range needs to account for the missing part of the slope due to the deadband
 	const float factor = 1.0f - deadBand;
 
 	/* Climbout mode sets maximum throttle and pitch up */
 	bool climbout_mode = false;
 
 	/*
-	 * Reset the hold altitude to the current altitude if the uncertainty
-	 * changes significantly.
-	 * This is to guard against uncommanded altitude changes
-	 * when the altitude certainty increases or decreases.
+	 * 当不确定性变化显著时，就是高度明显变化，则将当前高度赋值为需要保持的高度
+	 * Reset the hold altitude to the current altitude if the uncertainty　changes significantly.
+	 * This is to guard against uncommanded altitude changes　when the altitude certainty increases or decreases.
 	 */
 
 	if (fabsf(_althold_epv - _global_pos.epv) > ALTHOLD_EPV_RESET_THRESH) {
@@ -1197,29 +1196,34 @@ bool FixedwingPositionControl::update_desired_altitude(float dt)
 	}
 
 	/*
-	 * Manual control has as convention the rotation around
-	 * an axis. Positive X means to rotate positively around
-	 * the X axis in NED frame, which is pitching down
+	 * Manual control has as convention the rotation around an axis. 
+	 * Positive X means to rotate positively around the X axis in NED frame, which is pitching down
 	 */
+
+	//如果摇杆大于死区，当打杆时高度持续叠加积分量，并且杆量越大dt时间内高度叠加越多，所以可以理解为“爬升率”：dt时间内爬升的高度
+	//注意下面正负号，pitch这个杆是反的，下面实际是在降落
 	if (_manual.x > deadBand) {
 		/* pitching down */
 		float pitch = -(_manual.x - deadBand) / factor;
 		_hold_alt += (_parameters.max_sink_rate * dt) * pitch;
 		_was_in_deadband = false;
 
-	} else if (_manual.x < - deadBand) {
+	} 
+	//如果摇杆死区之外，当打杆时高度持续叠加积分量，并且杆量越大dt时间内高度叠加越多，所以可以理解为“爬升率”：dt时间内爬升的高度
+	else if (_manual.x < - deadBand) {
 		/* pitching up */
 		float pitch = -(_manual.x + deadBand) / factor;
 		_hold_alt += (_parameters.max_climb_rate * dt) * pitch;
-		_was_in_deadband = false;
+		_was_in_deadband = false; //摇杆不在死区　
 		climbout_mode = (pitch > MANUAL_THROTTLE_CLIMBOUT_THRESH);
-
-	} else if (!_was_in_deadband) {
+	} 
+	//摇杆虽然上一次不在死区，但是现在在死区了
+	else if (!_was_in_deadband) {
 		/* store altitude at which manual.x was inside deadBand
 		 * The aircraft should immediately try to fly at this altitude
 		 * as this is what the pilot expects when he moves the stick to the center */
-		_hold_alt = _global_pos.alt;
-		_althold_epv = _global_pos.epv;
+		_hold_alt = _global_pos.alt;//保存当前高度
+		_althold_epv = _global_pos.epv;//高度方向的精度
 		_was_in_deadband = true;
 	}
 
@@ -1229,7 +1233,7 @@ bool FixedwingPositionControl::update_desired_altitude(float dt)
 		}
 	}
 
-	return climbout_mode;
+	return climbout_mode;//是否处于爬升模式，决定与pitch爬升的杆量
 }
 
 bool FixedwingPositionControl::in_takeoff_situation()
@@ -1277,10 +1281,12 @@ void FixedwingPositionControl::do_takeoff_help(float *hold_altitude, float *pitc
 
 
 
-
-
-
-
+// 控制过程梳理三（可本文件搜索，查看处理过程）
+// 位置控制模块功能：调用L1和TECS计算att_sp, 最后正确结果 publish(_attitude_setpoint_id
+// 输入参数为：1. 当前位置；2. 当前地速； 3. 当前的期望航点
+// 输出att_sp是否计算成功，成功则发布，不成功直接跳出。
+// 如果是ALT POS AUTO都会进入这个函数计算并产生att_sp，返回setpoint　=　true发布att_sp。
+// 手动控制STAB,MANUAL，return false跳出位置控制不发布att_sp，而是进入到att_control在哪里产生att_sp.
 
 bool
 FixedwingPositionControl::control_position(const math::Vector<2> &current_position, const math::Vector<3> &ground_speed,
@@ -1294,33 +1300,36 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 	_control_position_last_called = hrt_absolute_time();
 
-	/* only run position controller in fixed-wing mode and during transitions for VTOL */
+	//只有固定翼或垂起固定翼才需要运行这里，其他的如旋翼，return false跳过位置控制这个模块
 	if (_vehicle_status.is_rotary_wing && !_vehicle_status.in_transition_mode) {
 		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 		return false;
 	}
 
-	//这是位置控制的返回值,跳出这里 回归函数,他代表是否使用位置控制的期望姿态.
-	//他的赋值就只有这两处,这里初始化为true,默认使用位置控制计算的姿态.另一处在下面手动控制下重置为false.
+	//这是函数返回值,决定是否发布使用att_sp.
+	//他的赋值就只有两处,这里默认true使用位置控制计算的att_sp.另一处在下面手动控制下重置为false跳过位置控制进入fw_att_control.
 	bool setpoint = true;
 	 
 
 	_att_sp.fw_control_yaw = false;		// by default we don't want yaw to be contoller directly with rudder
 	_att_sp.apply_flaps = false;		// by default we don't use flaps
-	float eas2tas = 1.0f; // XXX calculate actual number based on current measurements
+	float eas2tas = 1.0f; 				// XXX calculate actual number based on current measurements
+
+
 
 	/* filter speed and altitude for controller */
 	math::Vector<3> accel_body(_sensor_combined.accelerometer_m_s2);
 
-	// tailsitters use the multicopter frame as reference, in fixed wing
-	// we need to use the fixed wing frame
+	//尾座式的垂起 坐标系需要转换一下
 	if (_parameters.vtol_type == vtol_type::TAILSITTER && _vehicle_status.is_vtol) {
 		float tmp = accel_body(0);
 		accel_body(0) = -accel_body(2);
 		accel_body(2) = tmp;
 	}
 
+	//将体轴加速度转换到NED系中
 	math::Vector<3> accel_earth = _R_nb * accel_body;
+
 
 	/* tell TECS to update its state, but let it know when it cannot actually control the plane */
 	bool in_air_alt_control = (!_vehicle_land_detected.landed &&
@@ -1328,19 +1337,32 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 				    _control_mode.flag_control_velocity_enabled ||
 				    _control_mode.flag_control_altitude_enabled));
 
-	/* update TECS filters */
+	/*************************
+	* 该函数为_tecs控制器的入口函数。
+	* 此处，将当前得到的高度，空速，姿态，加速度等信息，传给_tecs控制器。
+	* 在这个函数中，对每个方向的加速度、速度、位置（高度）的原始数据做滤波，并存储到相关的变量，随后做控制。
+	**************************/
 	_tecs.update_state(_global_pos.alt, _ctrl_state.airspeed, _R_nb,
 			   accel_body, accel_earth, (_global_pos.timestamp > 0), in_air_alt_control);
 
+	
+
+
+	/*************************
+	* 如果当前的地速大于等于最小地速，那么groundspeed_undershoot为0；
+	* 如果当前地速小于最小地速，那么这个groundspeed_undershoot为一个正值
+	**************************/
 	math::Vector<2> ground_speed_2d = {ground_speed(0), ground_speed(1)};
 	calculate_gndspeed_undershoot(current_position, ground_speed_2d, pos_sp_triplet);
 
-	// l1 navigation logic breaks down when wind speed exceeds max airspeed
-	// compute 2D groundspeed from airspeed-heading projection
+
+	// 当风速大于最大空速时会导致l1崩溃　l1 navigation logic breaks down when wind speed exceeds max airspeed
+	// 将空速投影计算地速　compute 2D groundspeed from airspeed-heading projection
 	math::Vector<2> air_speed_2d = {_ctrl_state.airspeed * cosf(_yaw), _ctrl_state.airspeed * sinf(_yaw)};
 	math::Vector<2> nav_speed_2d = {0, 0};
 
-	// angle between air_speed_2d and ground_speed_2d
+	//计算当前的空速跟地速的夹角,并给速度赋值。
+	//如果此角度大于90°，或者地速特别小（可能风速特别大且逆风）,直接认为groundspeed为空速
 	float air_gnd_angle = acosf((air_speed_2d * ground_speed_2d) / (air_speed_2d.length() * ground_speed_2d.length()));
 
 	// if angle > 90 degrees or groundspeed is less than threshold, replace groundspeed with airspeed projection
@@ -1351,11 +1373,13 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		nav_speed_2d = ground_speed_2d;
 	}
 
+
 	/* define altitude error */
 	float altitude_error = pos_sp_triplet.current.alt - _global_pos.alt;
 
 	/* no throttle limit as default */
 	float throttle_max = 1.0f;
+
 
 	/* save time when airplane is in air */
 	if (!_was_in_air && !_vehicle_land_detected.landed) {
@@ -1369,6 +1393,10 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		_was_in_air = false;
 	}
 
+
+	// 控制过程梳理十　AUTO模式
+	//下面是AUTO自动模式的处理！包含正常的航点模式、自动起飞、自动降落
+
 	if (_control_mode.flag_control_auto_enabled && 
 	    pos_sp_triplet.current.valid) {
 		/* AUTONOMOUS FLIGHT */
@@ -1381,9 +1409,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 		_control_mode_current = FW_POSCTRL_MODE_AUTO;
 
-		/* reset hold altitude */
+		//如果是从非自动模式切换到这个模式，且不做任何输入，那么随后就保持切换时刻的高度和航向
 		_hold_alt = _global_pos.alt;
-		/* reset hold yaw */
 		_hdg_hold_yaw = _yaw;
 
 		/* get circle mode */
@@ -1420,6 +1447,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 		}
 
+		// 自动模式的航点中包含可以设置的巡航速度和巡航油门，将其读取并存在相应的变量中
 		float mission_airspeed = _parameters.airspeed_trim;
 
 		if (PX4_ISFINITE(_pos_sp_triplet.current.cruising_speed) &&
@@ -1435,12 +1463,18 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			mission_throttle = _pos_sp_triplet.current.cruising_throttle;
 		}
 
+
+		//空闲模式，直接都给零
 		if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_IDLE) {
 			_att_sp.thrust = 0.0f;
 			_att_sp.roll_body = 0.0f;
 			_att_sp.pitch_body = 0.0f;
 
-		} else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_POSITION) {
+		} 
+		
+
+		//航点模式，从_L1控制器中得到期望滚转和期望航向，从_tecs控制器得到期望油门和期望俯仰角
+		else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_POSITION) {
 			/* waypoint is a plain navigation waypoint */
 			_l1_control.navigate_waypoints(prev_wp, curr_wp, current_position, nav_speed_2d);
 			_att_sp.roll_body = _l1_control.nav_roll();
@@ -1451,7 +1485,14 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 						   _parameters.throttle_min, _parameters.throttle_max, mission_throttle,
 						   false, math::radians(_parameters.pitch_limit_min), _global_pos.alt, ground_speed);
 
-		} else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_LOITER) {
+		} 
+		
+		/*************************
+		* 盘旋模式，从_L1控制器中得到期望滚转和期望航向，从_tecs控制器得到期望油门和期望俯仰角
+		* 如果当前飞机处于起飞状态，即起飞就盘旋的状态，那么会对滚转角有个正负5°的限制，优先保证起飞再盘旋
+		* 如果中断降落，那么正常情况下会再降落点上空盘旋，如果高度太低，那么会优先爬升起来再盘旋。
+		**************************/
+		else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_LOITER) {
 
 			/* waypoint is a loiter waypoint */
 			_l1_control.navigate_loiter(curr_wp, current_position, pos_sp_triplet.current.loiter_radius,
@@ -1459,6 +1500,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_att_sp.roll_body = _l1_control.nav_roll();
 			_att_sp.yaw_body = _l1_control.nav_bearing();
 
+			/* 盘旋高度由航点设置决定 */
 			float alt_sp = pos_sp_triplet.current.alt;
 
 			if (in_takeoff_situation()) {
@@ -1490,7 +1532,22 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 						   _global_pos.alt,
 						   ground_speed);
 
-		} else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_LAND) {
+		} 
+		/*************************
+		*
+		* 自动降落模式，从_L1控制器中得到期望滚转和期望航向，从_tecs控制器得到期望油门和期望俯仰角
+		* 首先在降落模式的时候，会启用副翼或升降舵手动控制，然后分为三个阶段，进行水平和垂直两个方向的控制。
+		* 1. 在距离降落点足够远、高度足够高的时候，进行正常的航点控制，会使飞机不断的降低高度，同时逼近理想航线与期望航向（现实中多为降落跑道）；
+		* 2. 水平方向上，接近降落点的时候，即 wp_distance < _parameters.land_heading_hold_horizontal_distance 条件满足，
+		*    我们认为飞机已经在跑道上方且方向正确！那么开始保持航向，调用navigate_heading函数，横向控制只为保持航向。
+		* 3. 垂直方向上，高度足够高的时候，通过landingslope得到期望高度，保持飞机高度线性的下降。
+		* 4. 当高度低于 flare_relative_alt 并且水平距离小于 flare_length + 5.0f 的时候，那么认为飞机开始滑翔！
+		* 5. 滑翔的时候，飞机水平方向只保持航向，滚转角限制到很小的范围，同时可以手动操作方向舵或者轮子来控制航向。
+		* 6. 滑翔过程中的期望高度，通过FlareCurve得到，期望高度随着与降落点的水平距离减小，以幂指数降低。
+		* 7. 滑翔过程中，一旦检测到期望高度增大（异常情况），那么会将期望高度设置为零，防止出现意外的复飞。
+		*
+		**************************/
+		else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_LAND) {
 
 			// apply full flaps for landings. this flag will also trigger the use of flaperons
 			// if they have been enabled using the corresponding parameter
@@ -1522,6 +1579,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			// some distance behind landing waypoint. This will make sure that the plane
 			// will always follow the desired flight path even if we get close or past
 			// the landing waypoint
+			/* 没用到 */
 			math::Vector<2> curr_wp_shifted;
 			double lat;
 			double lon;
@@ -1549,7 +1607,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					mavlink_log_info(&_mavlink_log_pub, "#Landing, heading hold");
 				}
 
-     //					warnx("NORET: %d, target_bearing: %d, yaw: %d", (int)land_noreturn_horizontal, (int)math::degrees(target_bearing), (int)math::degrees(_yaw));
+    			//warnx("NORET: %d, target_bearing: %d, yaw: %d", (int)land_noreturn_horizontal, (int)math::degrees(target_bearing), (int)math::degrees(_yaw));
 
 				_l1_control.navigate_heading(_target_bearing, _yaw, nav_speed_2d);
 
@@ -1582,6 +1640,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			 * equal to _pos_sp_triplet.current.alt */
 			float terrain_alt;
 
+			/* 如果有测距模块等额外的设备，距离地面的高度可以直接得到，正常没有的情况下，地面高度由降落点的高度替代 */
 			if (_parameters.land_use_terrain_estimate) {
 				if (_global_pos.terrain_alt_valid) {
 					// all good, have valid terrain altitude
@@ -1625,6 +1684,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			float L_altitude_rel = pos_sp_triplet.previous.valid ?
 					       pos_sp_triplet.previous.alt - terrain_alt : 0.0f;
 
+			/* 根据当前距离降落点的距离，计算得到期望的高度，期望高度随着距离减小线性减小 */
 			float landing_slope_alt_rel_desired = _landingslope.getLandingSlopeRelativeAltitudeSave(wp_distance,
 							      bearing_lastwp_currwp, bearing_airplane_currwp);
 
@@ -1632,6 +1692,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			 * horizontal limit (with some tolerance)
 			 * The horizontal limit is only applied when we are in front of the wp
 			 */
+			/* 高度和水平距离都小于阈值，进入滑翔状态！ */
 			if (((_global_pos.alt < terrain_alt + _landingslope.flare_relative_alt()) &&
 			     (wp_distance_save < _landingslope.flare_length() + 5.0f)) ||
 			    _land_noreturn_vertical) {  //checking for land_noreturn to avoid unwanted climb out
@@ -1648,6 +1709,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 				_att_sp.yaw_body = _target_bearing;
 				_att_sp.fw_control_yaw = true;
 
+				/* 小于一定高度，油门最大值也降低为 throttle_land_max，可在地面站中修改该参数 */
 				if (_global_pos.alt < terrain_alt + _landingslope.motor_lim_relative_alt() || _land_motor_lim) {
 					throttle_max = math::min(throttle_max, _parameters.throttle_land_max);
 
@@ -1658,6 +1720,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 				}
 
+				/* 计算期望高度，随水平距离减小指数降低 */
 				float flare_curve_alt_rel = _landingslope.getFlareCurveRelativeAltitudeSave(wp_distance, bearing_lastwp_currwp,
 							    bearing_airplane_currwp);
 
@@ -1667,6 +1730,9 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					_land_stayonground = true;
 				}
 
+				/* 期望高度为flare_curve_alt_rel，随水平距离减小指数降低；
+				 * 期望空速为最小空速 airspeed_land = _parameters.land_airspeed_scale * _parameters.airspeed_min;
+				 */
 				tecs_update_pitch_throttle(terrain_alt + flare_curve_alt_rel,
 							   calculate_target_airspeed(airspeed_land),
 							   eas2tas,
@@ -1712,6 +1778,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 				 * if current position is below the slope continue at previous wp altitude
 				 * until the intersection with slope
 				 * */
+				/* 高度还很高，通过当前状态解算出期望高度，令飞机沿着该下降斜线飞 */
 				float altitude_desired_rel;
 
 				if (_global_pos.alt > terrain_alt + landing_slope_alt_rel_desired || _land_onslope) {
@@ -1742,8 +1809,27 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 							   ground_speed);
 			}
 
-		} else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_TAKEOFF) {
+		} 
+		/*************************
+		*
+		* 自动起飞模式，从_L1控制器中得到期望滚转和期望航向，从_tecs控制器得到期望油门和期望俯仰角，
+		* 随后，根据不同的起飞状态，用不同的roll\pitch\yaw的值覆盖上一步常规控制得到的值并输出，
+		* 直到正常的起飞完成，才会回归到正常的L1和_tecs控制器控制。
+		*
+		**************************/
+		else if (pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_TAKEOFF) {
 
+			/*************************
+			*
+			* 滑跑起飞，分为五个状态：
+			* 1. THROTTLE_RAMP 		油门随时间从零线性增加；
+			* 2. CLAMPED_TO_RUNWAY  增加油门一定时间后开始滑跑，此时航向可以通过轮子或方向舵手动控制；
+			* 3. TAKEOFF 			滑跑到一定空速后直接起飞，此时pitch由_tecs控制器解算得到；
+			* 4. CLIMBOUT 			起飞到一定高度后开始爬升，此时开始有滚转角的控制，即一边修改航线一边爬升；
+			* 5. FLY 				朝着预定起飞点飞行，此时控制为正常的auto模式的控制
+			* 全过程中，期望空速为最低空速乘上一个系数，这两个参数均可由用户修改。
+			*
+			**************************/
 			if (_runway_takeoff.runwayTakeoffEnabled()) {
 				if (!_runway_takeoff.isInitialized()) {
 					math::Quaternion q(&_ctrl_state.q[0]);
@@ -1767,10 +1853,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					_global_pos.lon,
 					&_mavlink_log_pub);
 
-				/*
-				 * Update navigation: _runway_takeoff returns the start WP according to mode and phase.
-				 * If we use the navigator heading or not is decided later.
-				 */
+			
+				 /* 通过_runway_takeoff 控制器，不同的状态得到不同的StartWP，再传入L1控制器 */
 				_l1_control.navigate_waypoints(_runway_takeoff.getStartWP(), curr_wp, current_position, nav_speed_2d);
 
 				// update tecs
@@ -1839,8 +1923,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					_att_sp.roll_body = _l1_control.nav_roll();
 					_att_sp.yaw_body = _l1_control.nav_bearing();
 
-					/* Select throttle: only in LAUNCHDETECTION_RES_DETECTED_ENABLEMOTORS we want to use
-					 * full throttle, otherwise we use the preTakeOff Throttle */
+					/* 在刚刚弹射出去的迟滞时间中，没有油门输出，随后进入正常的模式，油门立刻拉满 */
 					float takeoff_throttle = _launch_detection_state !=
 								 LAUNCHDETECTION_RES_DETECTED_ENABLEMOTORS ?
 								 _launchDetector.getThrottlePreTakeoff() : _parameters.throttle_max;
@@ -1850,8 +1933,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					float takeoff_pitch_max_deg = _launchDetector.getPitchMax(_parameters.pitch_limit_max);
 					float takeoff_pitch_max_rad = math::radians(takeoff_pitch_max_deg);
 
-					/* apply minimum pitch and limit roll if target altitude is not within climbout_diff
-					 * meters */
+					/* 在高度还不够高的时候，取最小的pitch并且限制滚转角的幅度，保证飞机在高度较低的时候安全爬升 */
 					if (_parameters.climbout_diff > 0.001f && altitude_error > _parameters.climbout_diff) {
 						/* enforce a minimum of 10 degrees pitch up on takeoff, or take parameter */
 						tecs_update_pitch_throttle(pos_sp_triplet.current.alt,
@@ -1872,7 +1954,9 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 						_att_sp.roll_body = math::constrain(_att_sp.roll_body, math::radians(-15.0f),
 										    math::radians(15.0f));
 
-					} else {
+					} 
+					/* 达到了一定的高度，开始正常的控制，此时的期望空速也为航点模式下的空速 mission_airspeed */
+					else {
 						tecs_update_pitch_throttle(pos_sp_triplet.current.alt,
 									   calculate_target_airspeed(mission_airspeed),
 									   eas2tas,
@@ -1888,8 +1972,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					}
 
 				} else {
-					/* Tell the attitude controller to stop integrating while we are waiting
-					 * for the launch */
+					/* 这里还没有发射出去，因此积分量始终保持为0,滚转角也为0*/
 					_att_sp.roll_reset_integral = true;
 					_att_sp.pitch_reset_integral = true;
 					_att_sp.yaw_reset_integral = true;
@@ -1920,8 +2003,12 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 	}
 	
-	//如果z轴控高度 水平控速度,那就是定点模式了.在四选一定点模式,三轴都是控速度,但是固定翼是没法停在一个点的
-	//下面去验证下 摇杆的转化量
+	//控制过程梳理九　POS定点模式
+	//下面是POS定点模式：定高定向飞行，ｚ轴控高度　水平控速度（方向）
+	//不大杆的情况下，飞机会保持当前的航向和高度一直向前飞
+	//打杆的话，和ALT模式一样，pitch杆控制的是期望高度，油门杆控制的是期望空速，
+	//roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应
+
 	else if (_control_mode.flag_control_velocity_enabled &&
 		   _control_mode.flag_control_altitude_enabled) {
 		/* POSITION CONTROL: pitch stick moves altitude setpoint, throttle stick sets airspeed,
@@ -1934,13 +2021,15 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_hdg_hold_enabled = false; // this makes sure the waypoints are reset below
 			_yaw_lock_engaged = false;
 
-			/* reset setpoints from other modes (auto) otherwise we won't
-			 * level out without new manual input */
+
+			// 重置一下roll和yaw方向的期望值，保证飞机平稳飞行。
+			//（pitch方向不需要重置，因为上面已经给高度值重置了）
 			_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
 			_att_sp.yaw_body = 0;
 		}
 
-		/* Reset integrators if switching to this mode from a other mode in which posctl was not active */
+
+		//从不定高定向的状态中切换过来，例如从手动切到POSCTL，需要重置_tecs控制器的相关变量	
 		if (_control_mode_current == FW_POSCTRL_MODE_OTHER) {
 			/* reset integrators */
 			_tecs.reset_state();
@@ -1948,14 +2037,14 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 		_control_mode_current = FW_POSCTRL_MODE_POSITION;
 
+		//如果打杆，pitch杆控制的是期望高度，油门杆控制的是期望空速
+		//当pitch输入非常大的时候，即认为飞机进入爬升模式
 		float altctrl_airspeed = get_demanded_airspeed();
-
-		/* update desired altitude based on user pitch stick input */
 		bool climbout_requested = update_desired_altitude(dt);
 
-		/* if we assume that user is taking off then help by demanding altitude setpoint well above ground
-		* and set limit to pitch angle to prevent stearing into ground
-		*/
+
+		//如果判定到当前正在起飞，
+		//那么会辅助设置一个距离地面一定高度的期望点，并且对pitch进行限值，防止擦到地面
 		float pitch_limit_min;
 		do_takeoff_help(&_hold_alt, &pitch_limit_min);
 
@@ -1967,6 +2056,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			throttle_max = 0.0f;
 		}
 
+		//调用_tecs控制器，根据摇杆转化的期望的高度和期望空速，得出保持空速需要的throttle sp，和保持高度需要的pitch sp
 		tecs_update_pitch_throttle(_hold_alt,
 					   altctrl_airspeed,
 					   eas2tas,
@@ -1981,7 +2071,9 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					   ground_speed,
 					   tecs_status_s::TECS_MODE_NORMAL);
 
-		/* heading control */
+		//下面是POS和ALT模式的区别，就在于滚转和航向的摇杆都在死区内，POS锁航向，保持当前的航向往前飞,ALT不锁航向随风摆
+		//滚转和航向的摇杆都在死区内，如何实现锁航向
+
 		if (fabsf(_manual.y) < HDG_HOLD_MAN_INPUT_THRESH &&
 		    fabsf(_manual.r) < HDG_HOLD_MAN_INPUT_THRESH) {
 
@@ -1992,14 +2084,14 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 			}
 
-			/* user tries to do a takeoff in heading hold mode, reset the yaw setpoint on every iteration
-			  to make sure the plane does not start rolling
-			*/
+			/* 如果在起飞过程中，那么保证每次循环都会重置yaw的期望值为当前的yaw，即保证起飞过程中没有滚转 */
 			if (in_takeoff_situation()) {
 				_hdg_hold_enabled = false;
 				_yaw_lock_engaged = true;
 			}
 
+			//在锁头模式的时候，会以当前的位置为起始点，当前的航向为方向，创建一个距离当前点水平3000m的点，
+			//然后将创建的点传给L1控制器，通过L1控制器解算出当前的期望滚转角和航向角。
 			if (_yaw_lock_engaged) {
 
 				/* just switched back from non heading-hold to heading hold */
@@ -2039,6 +2131,10 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 		}
 
+		
+		//POS和ALT模式的区别就在于滚转和航向的摇杆都在死区内，POS锁航向，保持当前的航向往前飞,ALT不锁航向随风摆
+		//那如果滚转和航向打杆呢？POS和ALT一样响应摇杆，此时摇杆控制　yaw不控
+
 		if (!_yaw_lock_engaged || fabsf(_manual.y) >= HDG_HOLD_MAN_INPUT_THRESH ||
 		    fabsf(_manual.r) >= HDG_HOLD_MAN_INPUT_THRESH) {
 			_hdg_hold_enabled = false;
@@ -2048,9 +2144,16 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		}
 
 	} 
-	else if (_control_mode.flag_control_altitude_enabled) {
-		/* ALTITUDE CONTROL: pitch stick moves altitude setpoint, throttle stick sets airspeed */
 
+	// 控制过程梳理四　ALT定高模式
+
+	//下面是固定翼ATLCTL定高模式，不打杆飞机会保持当前的高度往前飞，但是如果有侧风，横向航迹和航向都会随着风漂移。
+	//如果打杆，pitch杆控制的是期望高度，油门杆控制的是期望空速，
+	//如果打杆，roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应，
+
+	else if (_control_mode.flag_control_altitude_enabled) {
+
+		//从不控高度的模式过来，记录当前高度后期好定高飞行
 		if (_control_mode_current != FW_POSCTRL_MODE_POSITION && _control_mode_current != FW_POSCTRL_MODE_ALTITUDE) {
 			/* Need to init because last loop iteration was in a different mode */
 			_hold_alt = _global_pos.alt;
@@ -2062,13 +2165,16 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_tecs.reset_state();
 		}
 
+		//初始化完成后赋值当前当前模式为定高模式
 		_control_mode_current = FW_POSCTRL_MODE_ALTITUDE;
 
-		/* Get demanded airspeed */
+		// 控制过程梳理五（可本文件搜索，查看处理过程）
+		//如果打杆，pitch杆控制的是期望高度，油门杆控制的是期望空速
 		float altctrl_airspeed = get_demanded_airspeed();
 
 		/* update desired altitude based on user pitch stick input */
 		bool climbout_requested = update_desired_altitude(dt);
+
 
 		/* if we assume that user is taking off then help by demanding altitude setpoint well above ground
 		* and set limit to pitch angle to prevent stearing into ground
@@ -2083,6 +2189,9 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			throttle_max = 0.0f;
 		}
 
+		// 控制过程梳理八（可本文件搜索，查看处理过程）
+		//下面是att_sp产生的过程，位置控制计算的结果
+		// 调用_tecs控制器，根据摇杆转化的期望的高度和期望空速，得出保持空速需要的throttle sp，和保持高度需要的pitch sp
 		tecs_update_pitch_throttle(_hold_alt,
 					   altctrl_airspeed,
 					   eas2tas,
@@ -2096,15 +2205,19 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					   _global_pos.alt,
 					   ground_speed,
 					   tecs_status_s::TECS_MODE_NORMAL);
-
+		
+	//如果打杆，roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应，
 		_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
 		_att_sp.yaw_body = 0;
 
 	} 
+	
+	// 控制过程梳理十一 STAB手动模式
+	//不是ALT POS AUTO，那就是STAB MANUAL
 	else {
 		_control_mode_current = FW_POSCTRL_MODE_OTHER;
 
-		//手动模式下,下面是返回值为false,跳出主函数中,就是不发布位置控制计算的att_sp.
+		//手动模式,返回值为false,跳出主函数中,不发布位置控制计算的att_sp.
 		//即手动模式下,位置控制没用,瞎计算,在姿态控制中将会接收遥控器转化为期望姿态.
 		setpoint = false;
 
@@ -2123,7 +2236,19 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		/* Set thrust to 0 to minimize damage */
 		_att_sp.thrust = 0.0f;
 
-	} else if (_control_mode_current == FW_POSCTRL_MODE_AUTO && // launchdetector only available in auto
+	} 
+
+	//之前已经用TECS算出来thrust_sp，pitch_sp,但是部分特殊场合他们有着自己的要求
+	//下面就是判断是使用你算出来的，还是我自己来
+
+	//之前已经用TECS算出来_att_sp.thrust，但是部分特殊场合对油门有要求
+	//不同的状态会通过不同的控制器得到期望油门. 自动起飞相关油门设置，分别对应：
+	//1. 自动弹射起飞，开桨之前
+	//2. 自动滑跑起飞
+	//3. 空闲状态
+	//4. 其他非正常状态
+	//5. 正常状态
+	else if (_control_mode_current == FW_POSCTRL_MODE_AUTO && // launchdetector only available in auto
 		   pos_sp_triplet.current.type == position_setpoint_s::SETPOINT_TYPE_TAKEOFF &&
 		   _launch_detection_state != LAUNCHDETECTION_RES_DETECTED_ENABLEMOTORS &&
 		   !_runway_takeoff.runwayTakeoffEnabled()) {
@@ -2158,6 +2283,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 	}
 
+
+	//之前已经用TECS算出来_att_sp.pitch_body，但是部分特殊场合对pitch有特殊要求，下面判断是都使用TECS算出来的pitch_sp
 	// decide when to use pitch setpoint from TECS because in some cases pitch
 	// setpoint is generated by other means
 	bool use_tecs_pitch = true;
@@ -2232,6 +2359,13 @@ FixedwingPositionControl::handle_command()
 	}
 }
 
+
+
+
+// 控制过程梳理一（可本文件搜索，查看处理过程）
+//　这是固定翼的位置控制，向上承接commander的飞行模式和navigator的期望航点
+//　经过计算产生att_sp，向下发布给fw_att_control.
+//　ALT POS AUTO都会计算产生att_sp，但是STAB MANUAL会跳过位置控制直接进入到姿态控制中产生att_sp
 
 void
 FixedwingPositionControl::task_main()
@@ -2316,13 +2450,14 @@ FixedwingPositionControl::task_main()
 			parameters_update();
 		}
 
-		/* only run controller if position changed */
-		if (fds[1].revents & POLLIN) {
+		//以下整个运算都在这个POLL里面
+		if (fds[1].revents & POLLIN) {  
 			perf_begin(_loop_perf);
 
 			/* load local copies */
 			orb_copy(ORB_ID(vehicle_global_position), _global_pos_sub, &_global_pos);
-
+			
+			//在手动模式的时候，是否需要高度重置、坐标重置			
 			// handle estimator reset events. we only adjust setpoins for manual modes
 			if (_control_mode.flag_control_manual_enabled) {
 				if (_control_mode.flag_control_altitude_enabled && _global_pos.alt_reset_counter != _alt_reset_counter) {
@@ -2350,22 +2485,21 @@ FixedwingPositionControl::task_main()
 			control_state_poll();
 			vehicle_setpoint_poll();
 			vehicle_sensor_combined_poll();
-			vehicle_manual_control_setpoint_poll();
-			// vehicle_baro_poll();
+			vehicle_manual_control_setpoint_poll();		
 
 			math::Vector<3> ground_speed(_global_pos.vel_n, _global_pos.vel_e,  _global_pos.vel_d);
 			math::Vector<2> current_position((float)_global_pos.lat, (float)_global_pos.lon);
 
-			/*
-			 * Attempt to control position, on success (= sensors present and not in manual mode),
-			 * publish setpoint.
-			 */
-			//下面调用位置控制,实际的代码都在这里面,如果调用成功 说明计算好了_att_sp病发布使用他.如果返回false则就不会发布期望的姿态了!
+			
+			//控制过程梳理二（可本文件搜索，查看处理过程）
+			//位置控制模块最后正确结果是publish(_attitude_setpoint_id
+			//实际代码都在control_position函数里,ALT POS AUTO都会进入这个函数计算并产生att_sp，返回true发布att_sp。
+			//但旋翼状态，手动控制STAB,MANUAL，返回false跳出位置控制不发布att_sp，而是进入到att_control在哪里产生att_sp.
+
+			//进到括号说明att_sp计算成功并返回true,计算成功后下面进行publish.
 			if (control_position(current_position, ground_speed, _pos_sp_triplet)) 
-			{
+			{	
 				_att_sp.timestamp = hrt_absolute_time();
-				//位置控制计算成功,得到期望的姿态.
-				// add attitude setpoint offsets
 				_att_sp.roll_body += _parameters.rollsp_offset_rad;
 				_att_sp.pitch_body += _parameters.pitchsp_offset_rad;
 
@@ -2409,7 +2543,8 @@ FixedwingPositionControl::task_main()
 					fw_pos_ctrl_status_publish();
 				}
 
-			}//位置控制成功发布了两个topic,不成功啥也没有
+			}
+			//true则发布了两个topic,return false不成功啥也没有.
 
 			perf_end(_loop_perf);
 		}
@@ -2453,6 +2588,9 @@ void FixedwingPositionControl::reset_landing_state()
 
 }
 
+
+//将期望高度和期望空速传给tecs控制器
+
 void FixedwingPositionControl::tecs_update_pitch_throttle(float alt_sp, float v_sp, float eas2tas,
 		float pitch_min_rad, float pitch_max_rad,
 		float throttle_min, float throttle_max, float throttle_cruise,
@@ -2478,7 +2616,7 @@ void FixedwingPositionControl::tecs_update_pitch_throttle(float alt_sp, float v_
 		run_tecs &= !_vehicle_status.is_rotary_wing && !_vehicle_status.in_transition_mode;
 	}
 
-	// we're in transition
+	// 在垂起的转换过程中，期望空速与正常飞行的时候不同，需要做相关设置
 	if (_vehicle_status.is_vtol && _vehicle_status.in_transition_mode) {
 		_was_in_transition = true;
 
@@ -2495,6 +2633,7 @@ void FixedwingPositionControl::tecs_update_pitch_throttle(float alt_sp, float v_
 
 	} else if (_was_in_transition) {
 		// after transition we ramp up desired airspeed from the speed we had coming out of the transition
+		//转换成功以后，持续保持空速增加
 		_asp_after_transition += dt * 2; // increase 2m/s
 
 		if (_asp_after_transition < v_sp && _ctrl_state.airspeed < v_sp) {
@@ -2542,12 +2681,15 @@ void FixedwingPositionControl::tecs_update_pitch_throttle(float alt_sp, float v_
 		pitch_for_tecs = euler(1);
 	}
 
+	//TECS控制核心函数
+	//根据当前的高度，空速，期望的高度和空速，求解出期望的俯仰角和期望的油门
 	_tecs.update_pitch_throttle(_R_nb, pitch_for_tecs, altitude, alt_sp, v_sp,
 				    _ctrl_state.airspeed, eas2tas,
 				    climbout_mode, climbout_pitch_min_rad,
 				    throttle_min, throttle_max, throttle_cruise,
 				    pitch_min_rad, pitch_max_rad);
 
+	//从tecs控制器中读取结果
 	struct TECS::tecs_state s;
 	_tecs.get_tecs_state(s);
 
