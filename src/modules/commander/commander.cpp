@@ -2952,6 +2952,7 @@ int commander_thread_main(int argc, char *argv[])
 		}
 
 		/* publish states (armed, control mode, vehicle status) at least with 5 Hz */
+		//status_changed是遥控器层层切换处理的结果
 		if (counter % (200000 / COMMANDER_MONITORING_INTERVAL) == 0 || status_changed) {
 			set_control_mode();
 			control_mode.timestamp = now;
@@ -3296,10 +3297,9 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 		}
 
 
-		
-		
-		//以下是根据遥控器进行6种模式的切换,其中包括我的manual,arco,ratitude
-
+		//发电三模态重定义二（可全局搜索，查看重定义过程）
+		//下面是遥控器模式切换的判断过程 以及如果模式切换不成功的后退机制也在这里
+		//基于POS模式，借助Follow RATT ARCO实现后退 上升 下降，如果切换不成功，将后退到ALT模式
 		int new_mode = _flight_mode_slots[sp_man.mode_slot];
 
 		if (new_mode < 0) {
@@ -3371,11 +3371,11 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 					}
 				}
 
-				if (new_mode == commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET) {
+				if (new_mode == commander_state_s::MAIN_STATE_AUTO_LOITER) {
 
-					/* fall back to position control */
-					new_mode = commander_state_s::MAIN_STATE_AUTO_LOITER;
-					print_reject_mode(status_local, "AUTO FOLLOW");
+					//上面都降级为loiter被拒绝，那么降级为position */
+					new_mode = commander_state_s::MAIN_STATE_POSCTL;
+					print_reject_mode(status_local, "AUTO HOLD");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
 
 					if (res != TRANSITION_DENIED) {
@@ -3383,11 +3383,38 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 					}
 				}
 
-				if (new_mode == commander_state_s::MAIN_STATE_AUTO_LOITER) {
 
-					//上面都降级为loiter被拒绝，那么降级为position */
-					new_mode = commander_state_s::MAIN_STATE_POSCTL;
-					print_reject_mode(status_local, "AUTO HOLD");
+				//发电三模态重定义三（可全局搜索，查看重定义过程）
+				//已经将下面三个模式改写成POS模式，借助外Follow RATT ARCO实现后退 上升 下降
+				//这三个模式的切换需要进行位置有效检查，如果切换不成功，将后退到ALT模式
+				if (new_mode == commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET) {
+					//FOLLOW_TARGET被拒绝，降级为loiter，这里FOLLOW_TARGET已经被我改写成position模式
+					new_mode = commander_state_s::MAIN_STATE_ALTCTL;
+					print_reject_mode(status_local, "first mode back");
+					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
+
+					if (res != TRANSITION_DENIED) {
+						break;
+					}
+				}
+
+				if (new_mode == commander_state_s::MAIN_STATE_RATTITUDE) {
+					//FOLLOW_TARGET被拒绝，降级为loiter，这里FOLLOW_TARGET已经被我改写成position模式，本应该降级到ALT，这里不改了
+					/* fall back to position control */
+					new_mode = commander_state_s::MAIN_STATE_ALTCTL;
+					print_reject_mode(status_local, "second mode rise");
+					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
+
+					if (res != TRANSITION_DENIED) {
+						break;
+					}
+				}
+
+				if (new_mode == commander_state_s::MAIN_STATE_ACRO) {
+					//FOLLOW_TARGET被拒绝，降级为loiter，这里FOLLOW_TARGET已经被我改写成position模式，本应该降级到ALT，这里不改了
+					/* fall back to position control */
+					new_mode = commander_state_s::MAIN_STATE_ALTCTL;
+					print_reject_mode(status_local, "three mode dive");
 					res = main_state_transition(status_local, new_mode, main_state_prev, &status_flags, &internal_state);
 
 					if (res != TRANSITION_DENIED) {
@@ -3406,6 +3433,9 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 						break;
 					}
 				}
+
+
+
 
 				if (new_mode == commander_state_s::MAIN_STATE_ALTCTL) {
 
@@ -3561,7 +3591,8 @@ set_main_state_rc(struct vehicle_status_s *status_local)
 
 
 
-
+//发电三模态重定义五（可全局搜索，查看重定义过程）
+//四中定下了最终的飞行模式nav_state，这里配置标志位 开始真正影响位置控制和姿态控制的处理过程
 void
 set_control_mode()
 {
@@ -3576,7 +3607,7 @@ set_control_mode()
 									  //默认这个变量为0,用于区分stabilize manual rattitude arco
 
 	case vehicle_status_s::NAVIGATION_STATE_STAB:
-		//warnx("%s\n","--stab");
+		//warnx("%s\n","-----mode STAB");
 		//mavlink_log_info(&mavlink_log_pub, "set_control_mode STAB");
 		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
 		control_mode.flight_mode_ID=1;
@@ -3615,32 +3646,43 @@ set_control_mode()
 		break;
 
 
-
-	//第一个模态:以俯仰角10度 后退发电
 	case vehicle_status_s::NAVIGATION_STATE_ALTCTL:
-		//warnx("%s\n","--Manual");
-		//mavlink_log_info(&mavlink_log_pub, "set_control_mode Manual");
-		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
+		control_mode.flag_control_manual_enabled = true;
+		control_mode.flag_control_auto_enabled = false;
+		control_mode.flag_control_rates_enabled = true;
+		control_mode.flag_control_attitude_enabled = true;
+		control_mode.flag_control_rattitude_enabled = false;
+		control_mode.flag_control_altitude_enabled = true;
+		control_mode.flag_control_climb_rate_enabled = true;
+		control_mode.flag_control_position_enabled = false;
+		control_mode.flag_control_velocity_enabled = false;
+		control_mode.flag_control_acceleration_enabled = false;
+		control_mode.flag_control_termination_enabled = false;
+		break;
+
+
+
+
+	//第一模态：以POS模式重新封装的 FOLLOW 作为第一模态以期望定高后退发电
+	case vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET:
+		//warnx("%s\n","finally first mode ARCO");
 		control_mode.flight_mode_ID=3;
 		control_mode.flag_control_manual_enabled = true;
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
 		control_mode.flag_control_attitude_enabled = true;
-		control_mode.flag_control_rattitude_enabled = true;
-		control_mode.flag_control_altitude_enabled = false;
-		control_mode.flag_control_climb_rate_enabled = false;
-		control_mode.flag_control_position_enabled = false;
-		control_mode.flag_control_velocity_enabled = false;
+		control_mode.flag_control_rattitude_enabled = false;
+		control_mode.flag_control_altitude_enabled = true;
+		control_mode.flag_control_climb_rate_enabled = true;
+		control_mode.flag_control_position_enabled = !status.in_transition_mode;
+		control_mode.flag_control_velocity_enabled = !status.in_transition_mode;
 		control_mode.flag_control_acceleration_enabled = false;
 		control_mode.flag_control_termination_enabled = false;
-		/* override is not ok in stabilized mode */
-		control_mode.flag_external_manual_override_ok = false;
 		break;
 
-
-	//第二个模态:以俯仰角3度上升
+	//第二模态：以POS模式重新封装的 RATTITUDE 作为第二模态 以期望上升
 	case vehicle_status_s::NAVIGATION_STATE_RATTITUDE:
-		//warnx("%s\n","--Ratti");
+		//warnx("%s\n","finally second mode RATT");
 		//mavlink_log_info(&mavlink_log_pub, "set_control_mode Rattitude");
 		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
 		control_mode.flight_mode_ID=4;
@@ -3648,20 +3690,19 @@ set_control_mode()
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
 		control_mode.flag_control_attitude_enabled = true;
-		control_mode.flag_control_rattitude_enabled = true;
-		control_mode.flag_control_altitude_enabled = false;
-		control_mode.flag_control_climb_rate_enabled = false;
-		control_mode.flag_control_position_enabled = false;
-		control_mode.flag_control_velocity_enabled = false;
+		control_mode.flag_control_rattitude_enabled = false;
+		control_mode.flag_control_altitude_enabled = true;
+		control_mode.flag_control_climb_rate_enabled = true;
+		control_mode.flag_control_position_enabled = !status.in_transition_mode;
+		control_mode.flag_control_velocity_enabled = !status.in_transition_mode;
 		control_mode.flag_control_acceleration_enabled = false;
 		control_mode.flag_control_termination_enabled = false;
-		/* override is not ok in stabilized mode */
-		control_mode.flag_external_manual_override_ok = false;
 		break;
 
+	//第三模态：以POS模式重新封装的 ACRO 作为第三模态 以期望下降
 	//第三个模态:以俯仰角-5度下降
 	case vehicle_status_s::NAVIGATION_STATE_ACRO:
-		//warnx("%s\n","--ARCO");
+		//warnx("%s\n","finally three mode ARCO");
 		//mavlink_log_info(&mavlink_log_pub, "set_control_mode ACRO");
 		//不能在此发,否则会在地面站一直发送,vehicle_control_mode在外面调用处会以最低5Hz发布的
 		control_mode.flight_mode_ID=8;
@@ -3669,32 +3710,14 @@ set_control_mode()
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
 		control_mode.flag_control_attitude_enabled = true;
-		control_mode.flag_control_rattitude_enabled = true;
-		control_mode.flag_control_altitude_enabled = false;
-		control_mode.flag_control_climb_rate_enabled = false;
-		control_mode.flag_control_position_enabled = false;
-		control_mode.flag_control_velocity_enabled = false;
+		control_mode.flag_control_rattitude_enabled = false;
+		control_mode.flag_control_altitude_enabled = true;
+		control_mode.flag_control_climb_rate_enabled = true;
+		control_mode.flag_control_position_enabled = !status.in_transition_mode;
+		control_mode.flag_control_velocity_enabled = !status.in_transition_mode;
 		control_mode.flag_control_acceleration_enabled = false;
 		control_mode.flag_control_termination_enabled = false;
-		/* override is not ok in stabilized mode */
-		control_mode.flag_external_manual_override_ok = false;
 		break;
-
-
-
-	// case vehicle_status_s::NAVIGATION_STATE_ALTCTL:
-	// 	control_mode.flag_control_manual_enabled = true;
-	// 	control_mode.flag_control_auto_enabled = false;
-	// 	control_mode.flag_control_rates_enabled = true;
-	// 	control_mode.flag_control_attitude_enabled = true;
-	// 	control_mode.flag_control_rattitude_enabled = false;
-	// 	control_mode.flag_control_altitude_enabled = true;
-	// 	control_mode.flag_control_climb_rate_enabled = true;
-	// 	control_mode.flag_control_position_enabled = false;
-	// 	control_mode.flag_control_velocity_enabled = false;
-	// 	control_mode.flag_control_acceleration_enabled = false;
-	// 	control_mode.flag_control_termination_enabled = false;
-	// 	break;
 
 	case vehicle_status_s::NAVIGATION_STATE_POSCTL:
 		control_mode.flag_control_manual_enabled = true;
@@ -3715,7 +3738,6 @@ set_control_mode()
 		/* override is not ok for the RTL and recovery mode */
 		control_mode.flag_external_manual_override_ok = false;
 		/* fallthrough */
-	case vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET:
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_RTGS:
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_LAND:
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_LANDENGFAIL:
@@ -3841,7 +3863,7 @@ print_reject_mode(struct vehicle_status_s *status_local, const char *msg)
 
 	if (t - last_print_mode_reject_time > PRINT_MODE_REJECT_INTERVAL) {
 		last_print_mode_reject_time = t;
-		mavlink_log_critical(&mavlink_log_pub, "REJECT %s", msg);
+		mavlink_log_critical(&mavlink_log_pub, "RC switch,but commander reject %s", msg);
 
 		/* only buzz if armed, because else we're driving people nuts indoors
 		they really need to look at the leds as well. */

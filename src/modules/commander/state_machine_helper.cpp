@@ -371,38 +371,31 @@ main_state_transition(struct vehicle_status_s *status, main_state_t new_main_sta
 
 	/* transition may be denied even if the same state is requested because conditions may have changed */
 	switch (new_main_state) {
+	//这两种模式切换不需要任何条件
 	case commander_state_s::MAIN_STATE_MANUAL:
 	case commander_state_s::MAIN_STATE_STAB:
 		ret = TRANSITION_CHANGED;
 		break;
 
-	//原来固定翼是没有arco和半自稳模式,我现在就用这两种模式做模态切换
-	case commander_state_s::MAIN_STATE_ACRO:
-	case commander_state_s::MAIN_STATE_RATTITUDE:
-		if (status->is_rotary_wing) {
-			ret = TRANSITION_CHANGED;
-		}
-		else
-		{
-			ret = TRANSITION_CHANGED;
-		}
-		break;
-
-		case commander_state_s::MAIN_STATE_ALTCTL:
+	
+	case commander_state_s::MAIN_STATE_ALTCTL:
 
 		/* need at minimum altitude estimate */
+		if (status_flags->condition_local_altitude_valid ||
+		    status_flags->condition_global_position_valid) {
 			ret = TRANSITION_CHANGED;
+		}
 		break;
-	// case commander_state_s::MAIN_STATE_ALTCTL:
 
-	// 	/* need at minimum altitude estimate */
-	// 	if (status_flags->condition_local_altitude_valid ||
-	// 	    status_flags->condition_global_position_valid) {
-	// 		ret = TRANSITION_CHANGED;
-	// 	}
 
-	// 	break;
+	//发电三模态重定义一（可全局搜索，查看重定义过程）
+	//原本是用ALT RATT ARCO 三个自稳模态定义后退 上升 下降
+	//现在全部基于POS模式 重新定义这三个模态，借助外壳 Follow RATT ARCO
+	//这里是遥控器拨杆触发模式切换的第一步，切换要求位置信息有效，因为如果位置信息无效，位置控制就无法正常运行，强制切入模式，就导致位置控制无效，系统崩溃。
 
+	case commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET:
+	case commander_state_s::MAIN_STATE_ACRO:
+	case commander_state_s::MAIN_STATE_RATTITUDE:
 	case commander_state_s::MAIN_STATE_POSCTL:
 
 		/* need at minimum local position estimate */
@@ -422,7 +415,6 @@ main_state_transition(struct vehicle_status_s *status, main_state_t new_main_sta
 
 		break;
 
-	case commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET:
 	case commander_state_s::MAIN_STATE_AUTO_MISSION:
 	case commander_state_s::MAIN_STATE_AUTO_RTL:
 	case commander_state_s::MAIN_STATE_AUTO_TAKEOFF:
@@ -655,6 +647,10 @@ void enable_failsafe(struct vehicle_status_s *status,
 	status->failsafe = true;
 }
 
+
+//发电三模态重定义四（可全局搜索，查看重定义过程）
+//之前是判断遥控器能不能进行模式切换 ，如果不能怎么样的后退机制
+//这里是遥控器切换的模式确定后 根据当前飞控状态 做模式的失效保护处理，这里得到了最终的导航模式
 /**
  * Check failsafe and main status and set navigation status for navigator accordingly
  */
@@ -672,10 +668,8 @@ bool set_nav_state(struct vehicle_status_s *status, struct commander_state_s *in
 	status->failsafe = false;
 
 	/* evaluate main state to decide in normal (non-failsafe) mode */
-	switch (internal_state->main_state) {
-	case commander_state_s::MAIN_STATE_ACRO:
-	case commander_state_s::MAIN_STATE_MANUAL:
-	case commander_state_s::MAIN_STATE_RATTITUDE:
+	switch (internal_state->main_state) {	
+	case commander_state_s::MAIN_STATE_MANUAL:	
 	case commander_state_s::MAIN_STATE_STAB:
 	case commander_state_s::MAIN_STATE_ALTCTL:
 
@@ -698,16 +692,9 @@ bool set_nav_state(struct vehicle_status_s *status, struct commander_state_s *in
 
 		} else {
 			switch (internal_state->main_state) {
-			case commander_state_s::MAIN_STATE_ACRO:
-				status->nav_state = vehicle_status_s::NAVIGATION_STATE_ACRO;
-				break;
 
 			case commander_state_s::MAIN_STATE_MANUAL:
 				status->nav_state = vehicle_status_s::NAVIGATION_STATE_MANUAL;
-				break;
-
-			case commander_state_s::MAIN_STATE_RATTITUDE:
-				status->nav_state = vehicle_status_s::NAVIGATION_STATE_RATTITUDE;
 				break;
 
 			case commander_state_s::MAIN_STATE_STAB:
@@ -726,7 +713,12 @@ bool set_nav_state(struct vehicle_status_s *status, struct commander_state_s *in
 
 		break;
 
+	//保持和POS一样的失效保护模式
+	case commander_state_s::MAIN_STATE_ACRO:
+	case commander_state_s::MAIN_STATE_RATTITUDE:
+	case commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET:
 	case commander_state_s::MAIN_STATE_POSCTL: {
+
 			const bool rc_lost = rc_loss_enabled && (status->rc_signal_lost || status_flags->rc_signal_lost_cmd);
 
 			if (rc_lost && armed) {
@@ -765,8 +757,27 @@ bool set_nav_state(struct vehicle_status_s *status, struct commander_state_s *in
 					status->nav_state = vehicle_status_s::NAVIGATION_STATE_STAB;
 				}
 
-			} else {
-				status->nav_state = vehicle_status_s::NAVIGATION_STATE_POSCTL;
+			} 
+			else 
+			{
+				switch (internal_state->main_state) {
+					
+				case commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET:
+					status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET;
+					break;
+				
+				case commander_state_s::MAIN_STATE_RATTITUDE:
+					status->nav_state = vehicle_status_s::NAVIGATION_STATE_RATTITUDE;
+					break;
+
+				case commander_state_s::MAIN_STATE_ACRO:
+					status->nav_state = vehicle_status_s::NAVIGATION_STATE_ACRO;
+					break;
+
+				default:
+					status->nav_state = vehicle_status_s::NAVIGATION_STATE_POSCTL;
+					break;
+				}
 			}
 		}
 		break;
@@ -948,32 +959,7 @@ bool set_nav_state(struct vehicle_status_s *status, struct commander_state_s *in
 
 		break;
 
-	case commander_state_s::MAIN_STATE_AUTO_FOLLOW_TARGET:
-
-		/* require global position and home */
-
-		if (status->engine_failure) {
-			status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_LANDENGFAIL;
-
-		} else if (!status_flags->condition_global_position_valid) {
-			enable_failsafe(status, old_failsafe, mavlink_log_pub, reason_no_gps);
-
-			if (status_flags->condition_local_position_valid) {
-				status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_LAND;
-
-			} else if (status_flags->condition_local_altitude_valid) {
-				status->nav_state = vehicle_status_s::NAVIGATION_STATE_DESCEND;
-
-			} else {
-				status->nav_state = vehicle_status_s::NAVIGATION_STATE_TERMINATION;
-			}
-
-		} else {
-			status->nav_state = vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET;
-		}
-
-		break;
-
+		
 	case commander_state_s::MAIN_STATE_AUTO_TAKEOFF:
 
 		/* require global position and home */
