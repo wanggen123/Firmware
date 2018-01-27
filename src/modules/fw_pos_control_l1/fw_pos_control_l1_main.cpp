@@ -2010,7 +2010,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	//roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应
 
 	else if (_control_mode.flag_control_velocity_enabled &&
-		   _control_mode.flag_control_altitude_enabled) {
+		   _control_mode.flag_control_altitude_enabled && 
+		   _control_mode.flight_mode_ID==9) {
 		/* POSITION CONTROL: pitch stick moves altitude setpoint, throttle stick sets airspeed,
 		   heading is set to a distant waypoint */
 
@@ -2143,7 +2144,177 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_att_sp.yaw_body = 0;
 		}
 
-	} 
+	}
+
+
+	
+	//不想影响上面正常完整的POS处理，仿照POS重新写三个模态的处理过程，借助flight_mode_ID区分这四个POS
+	//发电三模态重定义六 三个模态都会进入到这个POS模式，不打杆的时候按照上面计算实现锁航向
+	//但是如果打杆，就开始实现不同处理了
+
+	else if (_control_mode.flag_control_velocity_enabled &&
+		   _control_mode.flag_control_altitude_enabled && 
+		  	 (_control_mode.flight_mode_ID==3 || //第一模态FOLLOW
+		   	 _control_mode.flight_mode_ID==4 || //第二模态RATT
+		  	 _control_mode.flight_mode_ID==8) )  //第三模态ACRO
+	{
+		/* POSITION CONTROL: pitch stick moves altitude setpoint, throttle stick sets airspeed,
+		   heading is set to a distant waypoint */
+
+		if (_control_mode_current != FW_POSCTRL_MODE_POSITION) {
+			/* Need to init because last loop iteration was in a different mode */
+			_hold_alt = _global_pos.alt;
+			_hdg_hold_yaw = _yaw;
+			_hdg_hold_enabled = false; // this makes sure the waypoints are reset below
+			_yaw_lock_engaged = false;
+
+
+			// 重置一下roll和yaw方向的期望值，保证飞机平稳飞行。
+			//（pitch方向不需要重置，因为上面已经给高度值重置了）
+			_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
+			_att_sp.yaw_body = 0;
+		}
+
+
+		//从不定高定向的状态中切换过来，例如从手动切到POSCTL，需要重置_tecs控制器的相关变量	
+		if (_control_mode_current == FW_POSCTRL_MODE_OTHER) {
+			/* reset integrators */
+			_tecs.reset_state();
+		}
+
+		_control_mode_current = FW_POSCTRL_MODE_POSITION;
+
+		//如果打杆，pitch杆控制的是期望高度，油门杆控制的是期望空速
+		//当pitch输入非常大的时候，即认为飞机进入爬升模式
+		float altctrl_airspeed = get_demanded_airspeed();
+		bool climbout_requested = update_desired_altitude(dt);
+
+
+		//如果判定到当前正在起飞，
+		//那么会辅助设置一个距离地面一定高度的期望点，并且对pitch进行限值，防止擦到地面
+		float pitch_limit_min;
+		do_takeoff_help(&_hold_alt, &pitch_limit_min);
+
+
+		/* throttle limiting */
+		throttle_max = _parameters.throttle_max;
+
+		if (_vehicle_land_detected.landed && (fabsf(_manual.z) < THROTTLE_THRESH)) {
+			throttle_max = 0.0f;
+		}
+
+		//调用_tecs控制器，根据摇杆转化的期望的高度和期望空速，得出保持空速需要的throttle sp，和保持高度需要的pitch sp
+		tecs_update_pitch_throttle(_hold_alt,
+					   altctrl_airspeed,
+					   eas2tas,
+					   math::radians(_parameters.pitch_limit_min),
+					   math::radians(_parameters.pitch_limit_max),
+					   _parameters.throttle_min,
+					   throttle_max,
+					   _parameters.throttle_cruise,
+					   climbout_requested,
+					   ((climbout_requested) ? math::radians(10.0f) : pitch_limit_min),
+					   _global_pos.alt,
+					   ground_speed,
+					   tecs_status_s::TECS_MODE_NORMAL);
+
+		//下面是POS和ALT模式的区别，就在于滚转和航向的摇杆都在死区内，POS锁航向，保持当前的航向往前飞,ALT不锁航向随风摆
+		//滚转和航向的摇杆都在死区内，如何实现锁航向
+
+		if (fabsf(_manual.y) < HDG_HOLD_MAN_INPUT_THRESH &&
+		    fabsf(_manual.r) < HDG_HOLD_MAN_INPUT_THRESH) {
+
+			/* heading / roll is zero, lock onto current heading */
+			if (fabsf(_ctrl_state.yaw_rate) < HDG_HOLD_YAWRATE_THRESH && !_yaw_lock_engaged) {
+				// little yaw movement, lock to current heading
+				_yaw_lock_engaged = true;
+
+			}
+
+			/* 如果在起飞过程中，那么保证每次循环都会重置yaw的期望值为当前的yaw，即保证起飞过程中没有滚转 */
+			if (in_takeoff_situation()) {
+				_hdg_hold_enabled = false;
+				_yaw_lock_engaged = true;
+			}
+
+			//在锁头模式的时候，会以当前的位置为起始点，当前的航向为方向，创建一个距离当前点水平3000m的点，
+			//然后将创建的点传给L1控制器，通过L1控制器解算出当前的期望滚转角和航向角。
+			if (_yaw_lock_engaged) {
+
+				/* just switched back from non heading-hold to heading hold */
+				if (!_hdg_hold_enabled) {
+					_hdg_hold_enabled = true;
+					_hdg_hold_yaw = _yaw;
+
+					get_waypoint_heading_distance(_hdg_hold_yaw, HDG_HOLD_DIST_NEXT, _hdg_hold_prev_wp, _hdg_hold_curr_wp, true);
+				}
+
+				/* we have a valid heading hold position, are we too close? */
+				if (get_distance_to_next_waypoint(_global_pos.lat, _global_pos.lon,
+								  _hdg_hold_curr_wp.lat, _hdg_hold_curr_wp.lon) < HDG_HOLD_REACHED_DIST) {
+					get_waypoint_heading_distance(_hdg_hold_yaw, HDG_HOLD_DIST_NEXT, _hdg_hold_prev_wp, _hdg_hold_curr_wp, false);
+				}
+
+				math::Vector<2> prev_wp;
+				prev_wp(0) = (float)_hdg_hold_prev_wp.lat;
+				prev_wp(1) = (float)_hdg_hold_prev_wp.lon;
+
+				math::Vector<2> curr_wp;
+				curr_wp(0) = (float)_hdg_hold_curr_wp.lat;
+				curr_wp(1) = (float)_hdg_hold_curr_wp.lon;
+
+				/* populate l1 control setpoint */
+				_l1_control.navigate_waypoints(prev_wp, curr_wp, current_position, ground_speed_2d);
+
+				_att_sp.roll_body = _l1_control.nav_roll();
+				_att_sp.yaw_body = _l1_control.nav_bearing();
+
+				if (in_takeoff_situation()) {
+					/* limit roll motion to ensure enough lift */
+					_att_sp.roll_body = math::constrain(_att_sp.roll_body, math::radians(-15.0f),
+									    math::radians(15.0f));
+				}
+			}
+
+		}
+
+		//三种模态下，当摇杆不在死区的时候 就不同处理了
+		//如果roll摇杆超过死区 摇杆控制副翼舵面
+		if (!_yaw_lock_engaged || fabsf(_manual.y) >= HDG_HOLD_MAN_INPUT_THRESH ||
+		    fabsf(_manual.r) >= HDG_HOLD_MAN_INPUT_THRESH) {
+			_hdg_hold_enabled = false;
+			_yaw_lock_engaged = false;
+			_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad; //副翼的最大舵面45度 在fw_att_control_params中定义的
+			_att_sp.yaw_body = 0;
+		}
+
+		//这时候如果打杆pitch呢,我只是想锁航线，pitch还是按照原来姿态控制的方法，控制pitch_sp
+		switch(_control_mode.flight_mode_ID)
+		{
+
+			case 3:  //Follow第一后退模态
+				_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max_rad + math::radians(6.0f);
+				_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
+				break;
+
+			case 4:  //Rattitude //第二上升模态
+				_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max_rad + math::radians(10.0f);
+				_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
+				break;
+
+			case 8:  //ARCO  //第三下降模态
+				_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max_rad + math::radians(-6.0f);
+				_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
+				break;
+		}
+	}
+	//上面是三个模态的POS仿写的处理过程
+	
+
+
+
+
+
 
 	// 控制过程梳理四　ALT定高模式
 
@@ -2206,7 +2377,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					   ground_speed,
 					   tecs_status_s::TECS_MODE_NORMAL);
 		
-	//如果打杆，roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应，
+		//如果打杆，roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应，
 		_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
 		_att_sp.yaw_body = 0;
 
@@ -2302,7 +2473,13 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	// manual attitude control,手动控制下不用tecs算出来的pitch
 	use_tecs_pitch &= !(_control_mode_current == FW_POSCTRL_MODE_OTHER);
 
-	if (use_tecs_pitch) {
+	//发电三模态重定义七
+	if(_control_mode.flight_mode_ID==3 ||  _control_mode.flight_mode_ID==4 || _control_mode.flight_mode_ID==8)
+	{
+		use_tecs_pitch=false;//三个模态不使用tecs pitch摇杆算作pitch_sp
+	}
+
+	if (use_tecs_pitch) {		
 		_att_sp.pitch_body = get_tecs_pitch();
 	}
 

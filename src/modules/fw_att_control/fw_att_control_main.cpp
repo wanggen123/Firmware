@@ -1005,8 +1005,8 @@ FixedwingAttitudeControl::task_main()
 				float yaw_manual = 0.0f;
 				float throttle_sp = 0.0f;
 
-				// 下面是手动模式下摇杆可控,手动模式下需要产生attitude setpoint
-				// _offset_rad默认为0,就是遥控器的微调.
+				
+				// 下面是手动模式下摇杆可控,STAB MANUAL模式下需要产生attitude setpoint
 				if (!_vcontrol_mode.flag_control_climb_rate_enabled) 
 				{	
 					int instance;

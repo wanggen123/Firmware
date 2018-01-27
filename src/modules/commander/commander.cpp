@@ -3720,6 +3720,7 @@ set_control_mode()
 		break;
 
 	case vehicle_status_s::NAVIGATION_STATE_POSCTL:
+		control_mode.flight_mode_ID=9;
 		control_mode.flag_control_manual_enabled = true;
 		control_mode.flag_control_auto_enabled = false;
 		control_mode.flag_control_rates_enabled = true;
