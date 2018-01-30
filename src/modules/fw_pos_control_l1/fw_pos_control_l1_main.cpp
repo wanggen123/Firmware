@@ -1104,13 +1104,14 @@ void FixedwingPositionControl::get_waypoint_heading_distance(float heading, floa
 	position_setpoint_s temp_next {};
 	position_setpoint_s temp_prev {};
 
+	//第一次锁航向，进入到下面这个函数：函数释义：以这个航向　这个距离　创建航点
 	if (flag_init) {
-		// on init set previous waypoint HDG_HOLD_SET_BACK_DIST meters behind us
+		//以当前的位置　当前航向的反方向heading+180.0f　向后创建一个距离100米的 waypoint_prev航点
 		waypoint_from_heading_and_distance(_global_pos.lat, _global_pos.lon, heading + 180.0f * M_DEG_TO_RAD_F ,
 						   HDG_HOLD_SET_BACK_DIST,
 						   &temp_prev.lat, &temp_prev.lon);
 
-		// set next waypoint HDG_HOLD_DIST_NEXT meters in front of us
+		//以当前的位置　当前航向heading　向前创建一个距离3000米的 waypoint_next航点,这两个航点就是飞机调用L1实现锁航向
 		waypoint_from_heading_and_distance(_global_pos.lat, _global_pos.lon, heading, HDG_HOLD_DIST_NEXT,
 						   &temp_next.lat, &temp_next.lon);
 		waypoint_prev = temp_prev;
@@ -1118,19 +1119,23 @@ void FixedwingPositionControl::get_waypoint_heading_distance(float heading, floa
 		waypoint_next.valid = true;
 		waypoint_next.alt = _hold_alt;
 
-		return;
+		return;//初始化造航点　造航线结束　return，再进来不需要初始化航点就会跳过上面这一段进入到下面
 
 
-	} else {
+	} 
+	//上面是第一次进入锁航向的时候，以当前位置　当前航向　向后100米创建waypoint_prev，向前3000米　创建waypoint_next，以调用L1实现压航线锁航向
+	//下面是飞机已经在锁航向状态中，距离前面的3000米的航点剩下只有1000米了，看来需要重新造航点　但是航线已经有了，只需要在线上造点就可以了
+	else {
 		// for previous waypoint use the one still in front of us but shift it such that it is
 		// located on the desired flight path but HDG_HOLD_SET_BACK_DIST behind us
+		//以curr_wp点　curr->prev方向，向后1100米造新点prev，其实就是在当前位置后面100米重新造点prev
 		create_waypoint_from_line_and_dist(waypoint_next.lat, waypoint_next.lon, waypoint_prev.lat, waypoint_prev.lon,
 						   HDG_HOLD_REACHED_DIST + HDG_HOLD_SET_BACK_DIST,
 						   &temp_prev.lat, &temp_prev.lon);
 	}
 
 	waypoint_next.valid = true;
-
+	//以curr_wp点　prev->curr方向，向后4000米造新点next，其实就是在当前位置后面5000米重新造点curr
 	create_waypoint_from_line_and_dist(waypoint_next.lat, waypoint_next.lon, waypoint_prev.lat, waypoint_prev.lon,
 					   -(HDG_HOLD_DIST_NEXT + HDG_HOLD_REACHED_DIST),
 					   &temp_next.lat, &temp_next.lon);
@@ -2009,6 +2014,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	//打杆的话，和ALT模式一样，pitch杆控制的是期望高度，油门杆控制的是期望空速，
 	//roll杆控制的是_att_sp.roll_body副翼舵面，yaw摇杆不响应
 
+	//下面在POSITION模式下探讨下L1锁航向的实现过程
 	else if (_control_mode.flag_control_velocity_enabled &&
 		   _control_mode.flag_control_altitude_enabled && 
 		   _control_mode.flight_mode_ID==9) {
@@ -2018,9 +2024,9 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		if (_control_mode_current != FW_POSCTRL_MODE_POSITION) {
 			/* Need to init because last loop iteration was in a different mode */
 			_hold_alt = _global_pos.alt;
-			_hdg_hold_yaw = _yaw;
-			_hdg_hold_enabled = false; // this makes sure the waypoints are reset below
-			_yaw_lock_engaged = false;
+			_hdg_hold_yaw = _yaw;		//如果从非POSITION模式进来，需要记下当前高度和航向，以便后面定高定向飞行。
+			_hdg_hold_enabled = false;	 //方向控一　这个标志为表示是否为第一次进入锁航向　第一次锁航向需要初始化prve curr航点信息以用来锁航向
+			_yaw_lock_engaged = false;	 //方向控一　这个标志代表当前是否处于锁航向的状态　锁航向的过程中需要不断判断　更新prve curr航点信息以用来锁航向
 
 
 			// 重置一下roll和yaw方向的期望值，保证飞机平稳飞行。
@@ -2039,7 +2045,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		_control_mode_current = FW_POSCTRL_MODE_POSITION;
 
 		//如果打杆，pitch杆控制的是期望高度，油门杆控制的是期望空速
-		//当pitch输入非常大的时候，即认为飞机进入爬升模式
+		//当pitch杆输入非常大的时候>0.85，即认为飞机进入爬升模式
 		float altctrl_airspeed = get_demanded_airspeed();
 		bool climbout_requested = update_desired_altitude(dt);
 
@@ -2072,8 +2078,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 					   ground_speed,
 					   tecs_status_s::TECS_MODE_NORMAL);
 
-		//下面是POS和ALT模式的区别，就在于滚转和航向的摇杆都在死区内，POS锁航向，保持当前的航向往前飞,ALT不锁航向随风摆
-		//滚转和航向的摇杆都在死区内，如何实现锁航向
+		//下面是POS和ALT模式的区别，就在于滚转和航向的摇杆都在死区内时，POS锁航向，保持当前的航向往前飞,ALT不锁航向随风摆
+		//滚转和航向的摇杆都在死区内，通过通过L1如何实现锁航向？下面的注释就是为解释这一点
 
 		if (fabsf(_manual.y) < HDG_HOLD_MAN_INPUT_THRESH &&
 		    fabsf(_manual.r) < HDG_HOLD_MAN_INPUT_THRESH) {
@@ -2081,33 +2087,39 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			/* heading / roll is zero, lock onto current heading */
 			if (fabsf(_ctrl_state.yaw_rate) < HDG_HOLD_YAWRATE_THRESH && !_yaw_lock_engaged) {
 				// little yaw movement, lock to current heading
-				_yaw_lock_engaged = true;
+				_yaw_lock_engaged = true;	//方向控二　如果摇杆在死区内并且yaw_rate很小时认为进入锁航向状态，锁航向就是保持yaw
 
 			}
 
-			/* 如果在起飞过程中，那么保证每次循环都会重置yaw的期望值为当前的yaw，即保证起飞过程中没有滚转 */
-			if (in_takeoff_situation()) {
-				_hdg_hold_enabled = false;
+			/* 方向控三　如果在起飞过程中，那么保证每次循环都会重置yaw的期望值为当前的yaw，即保证起飞过程中没有滚转 */
+			if (in_takeoff_situation()) {			//起飞过程中，这两个标志“之前不是锁航向　现在是锁yaw”,下面的初始化航点程序就会循环进入
+				_hdg_hold_enabled = false;	//循环进入，每次当前的yaw就会期望的航向，那么会不会再产生roll_sp yaw_sp,但同时每小步又都在保持当前yaw
 				_yaw_lock_engaged = true;
 			}
 
-			//在锁头模式的时候，会以当前的位置为起始点，当前的航向为方向，创建一个距离当前点水平3000m的点，
-			//然后将创建的点传给L1控制器，通过L1控制器解算出当前的期望滚转角和航向角。
-			if (_yaw_lock_engaged) {
+			//方向控四　在锁航向的时候，分为第一次进来初始化航点，后面在进来更新航点，都是在产生后面的prev前面的curr
+			//然后将创建的点传给L1控制器，通过L1控制器计算出压航线（锁航向）所期望滚转角和航向角。
+			if (_yaw_lock_engaged) {	//锁yaw了，即可以进入锁heading,都锁yaw了肯定锁航向
 
-				/* just switched back from non heading-hold to heading hold */
-				if (!_hdg_hold_enabled) {
+				
+				if (!_hdg_hold_enabled) {	//之前还不是锁heading，说明是第一进入锁航向状态，记录当前航向，下面开始初始航点
 					_hdg_hold_enabled = true;
 					_hdg_hold_yaw = _yaw;
-
+					//第一次进入锁航向，以当前位置　当前航向　向后100米创建prev_wp，向前3000米创建curr_wp，以调用L1实现压航线锁航向
 					get_waypoint_heading_distance(_hdg_hold_yaw, HDG_HOLD_DIST_NEXT, _hdg_hold_prev_wp, _hdg_hold_curr_wp, true);
 				}
 
-				/* we have a valid heading hold position, are we too close? */
+				//循环回来还是在锁航向状态中，但已经不是第一次进来上面判断跳过，进入到下面的航点和判断与更新，判断是不是已经很逼近前面3000米的航点了
 				if (get_distance_to_next_waypoint(_global_pos.lat, _global_pos.lon,
-								  _hdg_hold_curr_wp.lat, _hdg_hold_curr_wp.lon) < HDG_HOLD_REACHED_DIST) {
+								  _hdg_hold_curr_wp.lat, _hdg_hold_curr_wp.lon) < HDG_HOLD_REACHED_DIST) 
+				{
+					//距离前面的3000米的航点剩下只有1000米了，看来需要重新造航点了，以curr向前1100造新的prev，向后4000米造新的curr
 					get_waypoint_heading_distance(_hdg_hold_yaw, HDG_HOLD_DIST_NEXT, _hdg_hold_prev_wp, _hdg_hold_curr_wp, false);
 				}
+
+				//总结上面在给L1造航点的过程，第一次进入锁航向，以当前pos向前100米造prev,向后3000米造curr
+				//当pos向前逼近curr还剩1000的时候，这时候以curr，向前1１00米造prev,向后４000米造curr
+				//这一循环下去，飞机永远到不了curr，在Ｌ１的控制的又必须压航线　锁航向
 
 				math::Vector<2> prev_wp;
 				prev_wp(0) = (float)_hdg_hold_prev_wp.lat;
