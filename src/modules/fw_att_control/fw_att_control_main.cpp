@@ -721,6 +721,9 @@ FixedwingAttitudeControl::task_main_trampoline(int argc, char *argv[])
 	att_control::g_control->task_main();
 }
 
+
+
+
 void
 FixedwingAttitudeControl::task_main()
 {
@@ -873,8 +876,9 @@ FixedwingAttitudeControl::task_main()
 
 			vehicle_land_detected_poll();
 
-			// the position controller will not emit attitude setpoints in some modes
-			// we need to make sure that this flag is reset
+			//判断姿态控制中是否需要通过wheel控制yaw
+			//如果不是自动模式根本不会用wheel控yaw，如果是自动模式才会判断下是否需要用wheel控yaw,
+			//变量在位置控制中赋值，在auto下的takeoff和land会借助wheel控制航向,默认情况下，我们不需要wheel控制偏航
 			_att_sp.fw_control_yaw = _att_sp.fw_control_yaw && _vcontrol_mode.flag_control_auto_enabled;
 
 			/* lock integrator until control is started */
@@ -890,11 +894,8 @@ FixedwingAttitudeControl::task_main()
 			/* Simple handling of failsafe: deploy parachute if failsafe is on */
 			if (_vcontrol_mode.flag_control_termination_enabled) {
 				_actuators_airframe.control[7] = 1.0f;
-				//warnx("_actuators_airframe.control[1] = 1.0f;");
-
 			} else {
 				_actuators_airframe.control[7] = 0.0f;
-				//warnx("_actuators_airframe.control[1] = -1.0f;");
 			}
 
 			/* if we are in rotary wing mode, do nothing */
@@ -902,7 +903,7 @@ FixedwingAttitudeControl::task_main()
 				continue;
 			}
 
-			//襟翼的使用在fw位置控制中会处理，在这姿态控制里，我们默认就是使用襟翼
+			//襟翼的使用位置控制中赋值，只有在位置控制LAND时才会使用。这一句是我自己添加的，我要用它
 			 _att_sp.apply_flaps=true;
 			
 			//gear_switch原本只在mc_pos_control_main.cpp中用于旋翼起落架的控制
@@ -931,8 +932,6 @@ FixedwingAttitudeControl::task_main()
 				flap_control = _att_sp.apply_flaps ? 1.0f * _parameters.flaps_scale : 0.0f;
 			}
 
-			//万万注意，舵机只给一个常数值 是不会转的，这是我调试一个下午得出的结论
-			//万万注意，舵机只给一个常数值 是不会转的，这是我调试一个下午得出的结论
 			//万万注意，舵机只给一个常数值 是不会转的，这是我调试一个下午得出的结论
 			// move the actual control value continuous with time, full flap travel in 1sec
 			if (fabsf(_flaps_applied - flap_control) > 0.01f) {
@@ -963,7 +962,11 @@ FixedwingAttitudeControl::task_main()
 				_flaperons_applied = flaperon_control;
 			}
 
-			/* decide if in stabilized or full manual control */
+
+			//下面处理分三种：人机增稳STAB 　飞机自控ALT POS AUTO  纯手控MANUAL
+							
+			//除了manual，其他的正常模式都需要姿态控制，都会进入到下面if中.
+			//if中又会区分STAB摇杆控产生att_sp，还是涉及位置控(ALT POS AUTO)由位置控制产生att_sp
 			if (_vcontrol_mode.flag_control_attitude_enabled) {
 				/* scale around tuning airspeed */
 				float airspeed;
@@ -1006,7 +1009,7 @@ FixedwingAttitudeControl::task_main()
 				float throttle_sp = 0.0f;
 
 				
-				// 下面是手动模式下摇杆可控,STAB MANUAL模式下需要产生attitude setpoint
+				// 这里是STAB,摇杆产生att_sp
 				if (!_vcontrol_mode.flag_control_climb_rate_enabled) 
 				{	
 					int instance;
@@ -1023,7 +1026,7 @@ FixedwingAttitudeControl::task_main()
 							_att_sp.thrust = _manual.z;									
 							break;					
 							
-
+						//注意下面这段代码是之前用STAB造三个模态时写的，现在我已经改写成POS造三模态，下面这段代码中的３ 4 8不再起作用
 						case 3:  //altitude //第一后退模态
 							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
 							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
@@ -1051,31 +1054,24 @@ FixedwingAttitudeControl::task_main()
 							_att_sp.thrust = _manual.z;
 							break;
 					}
-					
-							// //以下测试遥控器切换模式是否成功,以及遥控是否可控
-							// static int kk=0;
-							// kk++;
-							// while(kk>200)
-							// {kk=0;
-							// 	warnx("test mode and rc");
-							// 	warnx("mode=%d",_vcontrol_mode.flight_mode_ID);	
-							// 	warnx("p=%8.4f\n",(double)_att_sp.pitch_body*57.3);
-							// 	warnx("r=%8.4f\n",(double)_att_sp.roll_body*57.3);					
-							// 	warnx("y=%8.4f\n",(double)_att_sp.yaw_body*57.3);
-							// 	warnx("t=%8.4f\n",(double)_att_sp.thrust);
-							// }
-					orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
-				}//上面是手动模式下摇杆可控,手动模式下可以根据摇杆产生期望姿态,如果是自动则用下面的代码进行获取
 
+					orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
+				}
+
+				//上面是STAB,摇杆产生att_sp，如果是ALT POS AUTO将不会进入上面if,而是下面这几句:从位置控制中获取att_sp
 				roll_sp = _att_sp.roll_body;
 				pitch_sp = _att_sp.pitch_body;
 				yaw_sp = _att_sp.yaw_body;
 				throttle_sp = _att_sp.thrust;
 
-				/* allow manual yaw in manual modes */
+
+
+				//STAB MANUAL ALT POS允许手控,此时摇杆可控偏航
+				//注意yaw的杆量直接叠加到输出了，没有转换为att_sp
 				if (_vcontrol_mode.flag_control_manual_enabled) {
 					yaw_manual = _manual.r;
 				}
+
 
 				/* reset integrals where needed */
 				if (_att_sp.roll_reset_integral) {
@@ -1104,6 +1100,8 @@ FixedwingAttitudeControl::task_main()
 				float speed_body_v = _R(0, 1) * _global_pos.vel_n + _R(1, 1) * _global_pos.vel_e + _R(2, 1) * _global_pos.vel_d;
 				float speed_body_w = _R(0, 2) * _global_pos.vel_n + _R(1, 2) * _global_pos.vel_e + _R(2, 2) * _global_pos.vel_d;
 
+
+
 				/* Prepare data for attitude controllers */
 				struct ECL_ControlData control_input = {};
 				control_input.roll = _roll;
@@ -1131,25 +1129,17 @@ FixedwingAttitudeControl::task_main()
 
 				_yaw_ctrl.set_coordinated_method(_parameters.y_coordinated_method);
 
-				/* Run attitude controllers */
-				if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
 
-							// ////以下最终的输入控制器的是不是之前手动算出来的
-							// static int yy=0;
-							// yy++;
-							// while(yy>200)
-							// {yy=0;				
-							// 	warnx("verification");
-							// 	warnx("p=%8.4f\n",(double)control_input.pitch_setpoint*57.3);
-							// 	warnx("r=%8.4f\n",(double)control_input.roll_setpoint*57.3);
-							// 	warnx("y=%8.4f\n",(double)control_input.yaw_setpoint*57.3);
-							// 	warnx("air=%8.4f\n",(double)airspeed);
-							// }
+
+
+
+				//上面无论是STAB摇杆产生att_sp，还是ALT POS AUTO位置控制产生att_sp，总的来说att_sp已经准备好，可以外环计算了
+				if (PX4_ISFINITE(roll_sp) && PX4_ISFINITE(pitch_sp)) {
 
 					_roll_ctrl.control_attitude(control_input);
 					_pitch_ctrl.control_attitude(control_input);
 					_yaw_ctrl.control_attitude(control_input); //runs last, because is depending on output of roll and pitch attitude
-					_wheel_ctrl.control_attitude(control_input);
+					_wheel_ctrl.control_attitude(control_input); //正常的yaw外环P控制，上面涉及开环 闭环 协调转弯。
 
 					/* Update input data for rate controllers */
 					control_input.roll_rate_setpoint = _roll_ctrl.get_desired_rate();
@@ -1196,6 +1186,7 @@ FixedwingAttitudeControl::task_main()
 
 					float yaw_u = 0.0f;
 
+					//默认不控yaw,这个变量在位置控制中赋值，只有control heading with rudder (used for auto takeoff on runway)
 					if (_att_sp.fw_control_yaw == true) {
 						yaw_u = _wheel_ctrl.control_bodyrate(control_input);
 					}
@@ -1207,7 +1198,7 @@ FixedwingAttitudeControl::task_main()
 					_actuators.control[actuator_controls_s::INDEX_YAW] = (PX4_ISFINITE(yaw_u)) ? yaw_u + _parameters.trim_yaw :
 							_parameters.trim_yaw;
 
-					/* add in manual rudder control */
+					//STAB MANUAL ALT POS允许手控,此时摇杆可控偏航,叠加手动下方向舵的控制量
 					_actuators.control[actuator_controls_s::INDEX_YAW] += yaw_manual;
 
 					if (!PX4_ISFINITE(yaw_u)) {
@@ -1261,14 +1252,14 @@ FixedwingAttitudeControl::task_main()
 				}
 
 			} else {
-				/* manual/direct control */
+				/*这里是MANUAL, 不走上面的增稳，直接控制舵机输出manual/direct control */
 				_actuators.control[actuator_controls_s::INDEX_ROLL] = _manual.y * _parameters.man_roll_scale + _parameters.trim_roll;
-				_actuators.control[actuator_controls_s::INDEX_PITCH] = -_manual.x * _parameters.man_pitch_scale +
-						_parameters.trim_pitch;
+				_actuators.control[actuator_controls_s::INDEX_PITCH] = -_manual.x * _parameters.man_pitch_scale + _parameters.trim_pitch;
 				_actuators.control[actuator_controls_s::INDEX_YAW] = _manual.r * _parameters.man_yaw_scale + _parameters.trim_yaw;
 				_actuators.control[actuator_controls_s::INDEX_THROTTLE] = _manual.z;
 			}
 
+			//上面roll pitch yaw throttle的四个基本控制量已经计算完成，还有一些辅助控制量需要填充
 			_actuators.control[actuator_controls_s::INDEX_FLAPS] = _flaps_applied;//襟翼输出在MAIN 5通道
 			_actuators.control[5] = _manual.aux1;
 			_actuators.control[actuator_controls_s::INDEX_AIRBRAKES] = _flaperons_applied;
@@ -1278,8 +1269,8 @@ FixedwingAttitudeControl::task_main()
 
 			//襟翼三种控制模式三（全局搜索襟翼三种控制模式可以查看修改）
 			//下面这段代码开始做襟翼控制模式的区分处理，单独的襟翼 襟副翼一体 butterfly襟翼，上面正常的姿态控制都没动
-			//把襟翼控制量根据_flap_mode = _manual.gear_switch区分填充到_actuators.control[7] ;
-			//在AETR混控中实现襟翼控制量在副翼中的区别叠加，从而区分实现襟翼 襟副翼一体 butterfly
+			//把襟翼控制量根据 襟翼控制模式_flap_mode 区分填充到_actuators.control[7] 
+			//在AETR混控中借助control[7]实现襟翼控制量在副翼中的区别叠加，从而区分实现襟翼 襟副翼一体 butterfly
 			switch(_flap_mode)
 			{
 				case 3:   //襟副翼一体

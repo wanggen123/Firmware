@@ -306,6 +306,7 @@ void TECS::_update_height_demand(float demand, float state)
 **************************/
 void TECS::_detect_underspeed(void)
 {
+	//默认做失速检测，只有在langing时不做失速检查
 	if (!_detect_underspeed_enabled) {
 		_underspeed = false;
 		return;
@@ -477,17 +478,19 @@ void TECS::_update_pitch(void)
 	*
 	* 计算动能势能的控制权重。
 	* 1 代表两者一样，正常情况下该权重系数都为1；
-	* 0 代表势能控制，即此时不管俯仰角，只控高度，没有空速测量值的时候，会进入这种情况；
+	*   不管高度还是速度我都想保证。
+	* 0 代表势能控制，即此时不管空速，只控高度，没有空速测量值的时候，会进入这种情况；
+	*	飞机高度不够，不管怎么样我先让飞机爬起来再说,pitch的控制基本没有。
 	* 2 代表动能控制，失速、起飞、爬升会进入这种情况
-	*
+	*	高度先不管了，他速度已经降下来了，先让他速度提起来
 	**************************/
 	float SKE_weighting = constrain(_spdWeight, 0.0f, 2.0f);
 
 	if ((_underspeed || _climbOutDem) && airspeed_sensor_enabled()) {
-		SKE_weighting = 2.0f;
+		SKE_weighting = 2.0f;	//动能控制，失速、起飞、爬升会进入这种情况,高度先不管了，他速度已经降下来了，先让他速度提起来
 
 	} else if (!airspeed_sensor_enabled()) {
-		SKE_weighting = 0.0f;
+		SKE_weighting = 0.0f;	//没有空速测量值时，此时不管俯仰角，只控高度
 	}
 
 	float SPE_weighting = 2.0f - SKE_weighting;
@@ -673,7 +676,9 @@ void TECS::update_pitch_throttle(const math::Matrix<3,3> &rotMat, float pitch, f
 	/*************************
 	*
 	* 3. 检查有没有失速
-	*
+	*    默认做失速检测，只有在langing时不做失速检查
+	*    失速判定条件为：小于最小空速且油门杆推满，或者，已经在失速中且高度小于期望高度
+	* 
 	**************************/
 	_detect_underspeed();
 

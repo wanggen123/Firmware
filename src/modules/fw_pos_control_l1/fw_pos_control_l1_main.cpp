@@ -1315,9 +1315,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	//他的赋值就只有两处,这里默认true使用位置控制计算的att_sp.另一处在下面手动控制下重置为false跳过位置控制进入fw_att_control.
 	bool setpoint = true;
 	 
-
-	_att_sp.fw_control_yaw = false;		// by default we don't want yaw to be contoller directly with rudder
-	_att_sp.apply_flaps = false;		// by default we don't use flaps
+	_att_sp.fw_control_yaw = false;		//变量在位置控制中赋值，在auto下的takeoff和land借助wheel控制航向,在姿态控制中使用，默认情况下，我们不需要wheel控制偏航
+	_att_sp.apply_flaps = false;		// 襟翼默认不使用，只有在LAND时才会使用襟翼，但是在姿态控制那里我已经修改成默认使用
 	float eas2tas = 1.0f; 				// XXX calculate actual number based on current measurements
 
 
@@ -1712,7 +1711,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 				/* enable direct yaw control using rudder/wheel */
 				_att_sp.yaw_body = _target_bearing;
-				_att_sp.fw_control_yaw = true;
+				_att_sp.fw_control_yaw = true;//变量在位置控制中赋值在姿态控制中使用，land时用wheel控制航向
 
 				/* 小于一定高度，油门最大值也降低为 throttle_land_max，可在地面站中修改该参数 */
 				if (_global_pos.alt < terrain_alt + _landingslope.motor_lim_relative_alt() || _land_motor_lim) {
@@ -1887,7 +1886,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 				// assign values
 				_att_sp.roll_body = _runway_takeoff.getRoll(_l1_control.nav_roll());
 				_att_sp.yaw_body = _runway_takeoff.getYaw(_l1_control.nav_bearing());
-				_att_sp.fw_control_yaw = _runway_takeoff.controlYaw();
+				_att_sp.fw_control_yaw = _runway_takeoff.controlYaw();//变量在位置控制中赋值在姿态控制中使用，跑道上自动起飞时用wheel控制航向
 				_att_sp.pitch_body = _runway_takeoff.getPitch(get_tecs_pitch());
 
 				// reset integrals except yaw (which also counts for the wheel controller)
@@ -2025,8 +2024,8 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			/* Need to init because last loop iteration was in a different mode */
 			_hold_alt = _global_pos.alt;
 			_hdg_hold_yaw = _yaw;		//如果从非POSITION模式进来，需要记下当前高度和航向，以便后面定高定向飞行。
-			_hdg_hold_enabled = false;	 //方向控一　这个标志为表示是否为第一次进入锁航向　第一次锁航向需要初始化prve curr航点信息以用来锁航向
-			_yaw_lock_engaged = false;	 //方向控一　这个标志代表当前是否处于锁航向的状态　锁航向的过程中需要不断判断　更新prve curr航点信息以用来锁航向
+			_hdg_hold_enabled = false;	 //方向控一　这个标志为表示是否为第一次进入锁航向　第一次锁航向需要初始化prve curr航点信息以用来L1锁航向
+			_yaw_lock_engaged = false;	 //方向控一　这个标志代表当前是否处于锁航向的状态　锁航向的过程中需要不断判断　更新prve curr航点信息以用来L1锁航向
 
 
 			// 重置一下roll和yaw方向的期望值，保证飞机平稳飞行。
@@ -2053,7 +2052,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 		//如果判定到当前正在起飞，
 		//那么会辅助设置一个距离地面一定高度的期望点，并且对pitch进行限值，防止擦到地面
 		float pitch_limit_min;
-		do_takeoff_help(&_hold_alt, &pitch_limit_min);
+		do_takeoff_help(&_hold_alt, &pitch_limit_min);//这里默认是－45度，这个函数里面限制成最小10度，防止头擦地
 
 
 		/* throttle limiting */

@@ -77,7 +77,7 @@ public:
 		_TAS_rate_dem(0.0f),
 		_STEdotErrLast(0.0f),
 		_underspeed(false),
-		_detect_underspeed_enabled(true),
+		_detect_underspeed_enabled(true),//默认做失速检测，只有在langing时不做失速检查
 		_badDescent(false),
 		_climbOutDem(false),
 		_pitch_dem_unc(0.0f),

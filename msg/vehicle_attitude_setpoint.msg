@@ -25,7 +25,7 @@ bool roll_reset_integral			# Reset roll integral part (navigation logic change)
 bool pitch_reset_integral			# Reset pitch integral part (navigation logic change)
 bool yaw_reset_integral				# Reset yaw integral part (navigation logic change)
 
-bool fw_control_yaw					# control heading with rudder (used for auto takeoff on runway)
+bool fw_control_yaw					#变量在位置控制中赋值，在auto下的takeoff和land借助wheel控制航向,在姿态控制中使用，默认情况下，我们不需要wheel控制偏航 control heading with rudder (used for auto takeoff on runway)
 bool disable_mc_yaw_control			# control yaw for mc (used for vtol weather-vane mode)
 
 bool apply_flaps
