@@ -1122,11 +1122,15 @@ FixedwingAttitudeControl::task_main()
 				control_input.airspeed_min = _parameters.airspeed_min;
 				control_input.airspeed_max = _parameters.airspeed_max;
 				control_input.airspeed = airspeed;
-				control_input.scaler = airspeed_scaling;
+				control_input.scaler = airspeed_scaling;		//正常roll pitch yaw姿态控制的内环使用airspeed_scale对计算的结果进行缩放
 				control_input.lock_integrator = lock_integrator;
 				control_input.groundspeed = groundspeed;
-				control_input.groundspeed_scaler = groundspeed_scaler;
+				control_input.groundspeed_scaler = groundspeed_scaler;	//wheel姿态控制的内环使用airspeed_scale对计算的结果进行缩放
 
+				// The param value sets the method used to calculate the yaw rate
+ 				//  0: open-loop zero lateral acceleration based on kinematic constraints
+				//  1: closed-loop: try to reduce lateral acceleration to 0 by measuring the acceleration
+				// 	默认为0：open-loop
 				_yaw_ctrl.set_coordinated_method(_parameters.y_coordinated_method);
 
 
@@ -1138,8 +1142,8 @@ FixedwingAttitudeControl::task_main()
 
 					_roll_ctrl.control_attitude(control_input);
 					_pitch_ctrl.control_attitude(control_input);
-					_yaw_ctrl.control_attitude(control_input); //runs last, because is depending on output of roll and pitch attitude
-					_wheel_ctrl.control_attitude(control_input); //正常的yaw外环P控制，上面涉及开环 闭环 协调转弯。
+					_yaw_ctrl.control_attitude(control_input);   	//实际来说 外环控制没有起作用，无论开环闭环产生的都是rate_sp=0,内环还会涉及协调转弯重新计算rate_sp，runs last, because is depending on output of roll and pitch attitude
+					_wheel_ctrl.control_attitude(control_input); //起飞降落是轮子的控制，正常的外环P+内环PID控制
 
 					/* Update input data for rate controllers */
 					control_input.roll_rate_setpoint = _roll_ctrl.get_desired_rate();
@@ -1186,12 +1190,17 @@ FixedwingAttitudeControl::task_main()
 
 					float yaw_u = 0.0f;
 
-					//默认不控yaw,这个变量在位置控制中赋值，只有control heading with rudder (used for auto takeoff on runway)
+					//默认不控_wheel_ctrl,这个变量在位置控制中赋值，只有control heading with rudder (used for auto takeoff on runway)
 					if (_att_sp.fw_control_yaw == true) {
 						yaw_u = _wheel_ctrl.control_bodyrate(control_input);
 					}
 
 					else {
+						//飞机空中正常的yaw控制，_yaw_ctrl的外环control_attitude无论开环还是闭环默认都是产生rate_sp=0
+						//不过这里内环还会根据协调转弯重新计算rate_sp
+						//想要表达的意思是，对于固定翼空中不控yaw方向舵，位置控制不控，姿态控制仅仅是协调转弯小控下
+						//如果你强打摇杆，那么杆量是不经过这些姿态控制的，而是直接叠加到_actuators，参考下面第4行
+						//就是固定翼除非用户强制打杆，正常飞机自己不想控yaw，而是通过roll控方向
 						yaw_u = _yaw_ctrl.control_bodyrate(control_input);
 					}
 
