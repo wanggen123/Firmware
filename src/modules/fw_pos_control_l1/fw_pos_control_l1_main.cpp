@@ -983,6 +983,7 @@ FixedwingPositionControl::task_main_trampoline(int argc, char *argv[])
 
 // 控制过程梳理六（可本文件搜索，查看处理过程）
 //　下面是讲述如何将油门杆控制的是期望空速
+//  POS ALT模式下摇杆转化而来的期望空速
 float
 FixedwingPositionControl::get_demanded_airspeed()
 {
@@ -1007,6 +1008,7 @@ FixedwingPositionControl::get_demanded_airspeed()
 	return altctrl_airspeed;
 }
 
+//AUTO模式下期望空速的计算，还需要考虑_groundspeed_undershoot
 float
 FixedwingPositionControl::calculate_target_airspeed(float airspeed_demand)
 {
@@ -1038,6 +1040,7 @@ FixedwingPositionControl::calculate_target_airspeed(float airspeed_demand)
 	return target_airspeed;
 }
 
+//用于AUTO模式下期望空速的辅助计算，POS ALT模式下的期望空速直接来自于摇杆转换
 void
 FixedwingPositionControl::calculate_gndspeed_undershoot(const math::Vector<2> &current_position,
 		const math::Vector<2> &ground_speed_2d, const struct position_setpoint_triplet_s &pos_sp_triplet)
@@ -1076,6 +1079,7 @@ FixedwingPositionControl::calculate_gndspeed_undershoot(const math::Vector<2> &c
 		 * This error value ensures that a plane (as long as its throttle capability is
 		 * not exceeded) travels towards a waypoint (and is not pushed more and more away
 		 * by wind). Not countering this would lead to a fly-away.
+		 * 用于AUTO模式下期望空速的辅助计算，可本文件搜索
 		 */
 		_groundspeed_undershoot = math::max(ground_speed_desired - ground_speed_body, 0.0f);
 
@@ -1096,6 +1100,9 @@ void FixedwingPositionControl::fw_pos_ctrl_status_publish()
 	}
 }
 
+
+
+//以这个航向　这个距离　创建航点，用于POS下L1的锁航向
 void FixedwingPositionControl::get_waypoint_heading_distance(float heading, float distance,
 		struct position_setpoint_s &waypoint_prev, struct position_setpoint_s &waypoint_next, bool flag_init)
 {
@@ -1355,6 +1362,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	/*************************
 	* 如果当前的地速大于等于最小地速，那么groundspeed_undershoot为0；
 	* 如果当前地速小于最小地速，那么这个groundspeed_undershoot为一个正值
+	* 用于AUTO模式下期望空速的辅助计算，POS ALT模式下的期望空速直接来自于摇杆转化
 	**************************/
 	math::Vector<2> ground_speed_2d = {ground_speed(0), ground_speed(1)};
 	calculate_gndspeed_undershoot(current_position, ground_speed_2d, pos_sp_triplet);
@@ -2152,7 +2160,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_hdg_hold_enabled = false;
 			_yaw_lock_engaged = false;
 			_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad;
-			_att_sp.yaw_body = 0;
+			_att_sp.yaw_body = 0; //意思飞机空中正常飞行不控方向舵yaw一。
 		}
 
 	}

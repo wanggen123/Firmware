@@ -1061,7 +1061,7 @@ FixedwingAttitudeControl::task_main()
 				//上面是STAB,摇杆产生att_sp，如果是ALT POS AUTO将不会进入上面if,而是下面这几句:从位置控制中获取att_sp
 				roll_sp = _att_sp.roll_body;
 				pitch_sp = _att_sp.pitch_body;
-				yaw_sp = _att_sp.yaw_body;
+				yaw_sp = _att_sp.yaw_body;    //取了位置控制产生的yaw_sp，下面只在wheel_control中使用了，yaw_control没用。意思飞机空中正常飞行不控方向舵yaw二。
 				throttle_sp = _att_sp.thrust;
 
 
@@ -1142,7 +1142,7 @@ FixedwingAttitudeControl::task_main()
 
 					_roll_ctrl.control_attitude(control_input);
 					_pitch_ctrl.control_attitude(control_input);
-					_yaw_ctrl.control_attitude(control_input);   	//实际来说 外环控制没有起作用，无论开环闭环产生的都是rate_sp=0,内环还会涉及协调转弯重新计算rate_sp，runs last, because is depending on output of roll and pitch attitude
+					_yaw_ctrl.control_attitude(control_input);   	//实际来说 外环控制没有起作用，无论开环闭环产生的都是rate_sp=0,内环还会涉及协调转弯重新计算rate_sp，意思飞机空中正常飞行不控方向舵yaw三。runs last, because is depending on output of roll and pitch attitude
 					_wheel_ctrl.control_attitude(control_input); //起飞降落是轮子的控制，正常的外环P+内环PID控制
 
 					/* Update input data for rate controllers */
@@ -1198,7 +1198,7 @@ FixedwingAttitudeControl::task_main()
 					else {
 						//飞机空中正常的yaw控制，_yaw_ctrl的外环control_attitude无论开环还是闭环默认都是产生rate_sp=0
 						//不过这里内环还会根据协调转弯重新计算rate_sp
-						//想要表达的意思是，对于固定翼空中不控yaw方向舵，位置控制不控，姿态控制仅仅是协调转弯小控下
+						//想要表达的意思是，意思飞机空中正常飞行不控方向舵yaw四，对于固定翼空中不控yaw方向舵，位置控制不控，姿态控制仅仅是协调转弯小控下
 						//如果你强打摇杆，那么杆量是不经过这些姿态控制的，而是直接叠加到_actuators，参考下面第4行
 						//就是固定翼除非用户强制打杆，正常飞机自己不想控yaw，而是通过roll控方向
 						yaw_u = _yaw_ctrl.control_bodyrate(control_input);

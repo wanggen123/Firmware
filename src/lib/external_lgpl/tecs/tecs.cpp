@@ -128,7 +128,7 @@ void TECS::update_state(float baro_altitude, float airspeed, const math::Matrix<
 *
 * 计算空速，对传感器进来的值做一个二阶的互补滤波，然后得到一个空速的估计值。
 * 得到的空速值会存在 _integ5_state 这个量中，随后计算能量会使用。
-*
+* 传参：期望的空速 现在的空速 空速min  空速max  系数=1
 **************************/
 void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 			 float indicated_airspeed_min, float indicated_airspeed_max, float EAS2TAS)
@@ -153,6 +153,7 @@ void TECS::_update_speed(float airspeed_demand, float indicated_airspeed,
 	// airspeed is not being used and set speed rate to zero
 	if (!PX4_ISFINITE(indicated_airspeed) || !airspeed_sensor_enabled()) {
 		// If no airspeed available use average of min and max
+		//如果现在的空速无效，或者空速计无效，就使用min和max的中间值看做现在的空速
 		_EAS = 0.5f * (indicated_airspeed_min + indicated_airspeed_max);
 
 	} else {
@@ -604,6 +605,10 @@ void TECS::_update_STE_rate_lim(void)
 {
 	// Calculate Specific Total Energy Rate Limits
 	// This is a trivial calculation at the moment but will get bigger once we start adding altitude effects
+	//这是一个微不足道的计算，但是一旦我们开始添加高度效应，它将变得影响更大
+	//这是总能量的变化率，为什么是速度×G
+	//飞机以最大的下降速率下降，高度会变，但是速度已经是最大的下降速率了，所以基本上只有势能在变
+	//对单位质量的mgh即gh求导，h的变化率就是最大的下降速度
 	_STEdot_max = _maxClimbRate * CONSTANTS_ONE_G;
 	_STEdot_min = - _minSinkRate * CONSTANTS_ONE_G;
 }
@@ -658,7 +663,7 @@ void TECS::update_pitch_throttle(const math::Matrix<3,3> &rotMat, float pitch, f
 	/*************************
 	*
 	* 1. 计算当前的空速，对测量到的空速做一个二阶的低通滤波
-	*
+	*    如果现在的空速无效，或者空速计无效，就使用min和max的中间值看做现在的空速
 	**************************/
 	_update_speed(EAS_dem, indicated_airspeed, _indicated_airspeed_min, _indicated_airspeed_max, EAS2TAS);
 
