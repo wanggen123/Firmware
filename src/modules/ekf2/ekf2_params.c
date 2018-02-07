@@ -692,7 +692,7 @@ PARAM_DEFINE_FLOAT(EKF2_TERR_GRAD, 0.5f);
  * @unit m
  * @decimal 3
  */
-PARAM_DEFINE_FLOAT(EKF2_IMU_POS_X, 0.0f);
+PARAM_DEFINE_FLOAT(EKF2_IMU_POS_X, 0.17f);
 
 /**
  * Y position of IMU in body frame
@@ -719,7 +719,7 @@ PARAM_DEFINE_FLOAT(EKF2_IMU_POS_Z, 0.0f);
  * @unit m
  * @decimal 3
  */
-PARAM_DEFINE_FLOAT(EKF2_GPS_POS_X, 0.0f);
+PARAM_DEFINE_FLOAT(EKF2_GPS_POS_X, 0.1f);
 
 /**
  * Y position of GPS antenna in body frame

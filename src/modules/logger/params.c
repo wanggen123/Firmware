@@ -47,7 +47,7 @@
  * @max  1000
  * @group SD Logging
  */
-PARAM_DEFINE_INT32(SDLOG_UTC_OFFSET, 0);
+PARAM_DEFINE_INT32(SDLOG_UTC_OFFSET, 480);
 
 /**
  * Logging Mode

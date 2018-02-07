@@ -65,7 +65,7 @@ PARAM_DEFINE_FLOAT(BD_GPROPERTIES, 0.03f);
  * @max 500.0
  * @group Payload drop
  */
-PARAM_DEFINE_FLOAT(BD_TURNRADIUS, 120.0f);
+PARAM_DEFINE_FLOAT(BD_TURNRADIUS, 60.0f);
 
 /**
  * Drop precision
