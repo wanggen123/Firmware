@@ -248,6 +248,8 @@ private:
 	float _asp_after_transition;
 	bool _was_in_transition;
 
+	float32 _back_airspeed_filtered; //期望第一模态定高后退一，设置期望的空速=实测的空速（在TECS中滤波后的空速）
+
 	// estimator reset counters
 	uint8_t _pos_reset_counter;		// captures the number of times the estimator has reset the horizontal position
 	uint8_t _alt_reset_counter;		// captures the number of times the estimator has reset the altitude state
@@ -617,6 +619,7 @@ FixedwingPositionControl::FixedwingPositionControl() :
 	_last_tecs_update(0.0f),
 	_asp_after_transition(0.0f),
 	_was_in_transition(false),
+	_back_airspeed_filtered(6.0f), //期望第一模态定高后退二，设置期望的空速=实测的空速（在TECS中滤波后的空速）
 	_pos_reset_counter(0),
 	_alt_reset_counter(0),
 	_l1_control(),
@@ -2205,7 +2208,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 		//如果打杆，pitch杆控制的是期望高度，油门杆控制的是期望空速
 		//当pitch输入非常大的时候，即认为飞机进入爬升模式
-		float altctrl_airspeed = get_demanded_airspeed();
+		//float altctrl_airspeed = get_demanded_airspeed(); //期望第一模态定高后退五，下面设置期望的空速=实测的空速，所以这里摇杆转换的空速是没用的
 		bool climbout_requested = update_desired_altitude(dt);
 
 
@@ -2224,7 +2227,7 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 
 		//调用_tecs控制器，根据摇杆转化的期望的高度和期望空速，得出保持空速需要的throttle sp，和保持高度需要的pitch sp
 		tecs_update_pitch_throttle(_hold_alt,
-					   altctrl_airspeed,
+					  _back_airspeed_filtered,	/*原本期望的空速来自油门杆转化altctrl_airspeed。期望第一模态定高后退四，这里设置期望的空速=实测的空速，期望空速的变化不会影响高度的变化（这里使用的是在TECS中滤波后的空速，因为动能的计算是使用滤波后的空速，而不是实测空速altctrl_airspeed）*/
 					   eas2tas,
 					   math::radians(_parameters.pitch_limit_min),
 					   math::radians(_parameters.pitch_limit_max),
@@ -2915,6 +2918,8 @@ void FixedwingPositionControl::tecs_update_pitch_throttle(float alt_sp, float v_
 	t.altitude_filtered = s.altitude_filtered;
 	t.airspeedSp 		= s.airspeed_sp;
 	t.airspeed_filtered = s.airspeed_filtered;
+
+	_back_airspeed_filtered = s.airspeed_filtered; //期望第一模态定高后退三，设置期望的空速=实测的空速（在TECS中滤波后的空速）
 
 	t.flightPathAngleSp 		= s.altitude_rate_sp;
 	t.flightPathAngle 			= s.altitude_rate;
