@@ -2309,26 +2309,6 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad; //副翼的最大舵面45度 在fw_att_control_params中定义的
 			_att_sp.yaw_body = 0;
 		}
-
-		//这时候如果打杆pitch呢,我只是想锁航线，pitch还是按照原来姿态控制的方法，控制pitch_sp
-		switch(_control_mode.flight_mode_ID)
-		{
-
-			case 3:  //Follow第一后退模态
-				_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max_rad + math::radians(6.0f);
-				_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
-				break;
-
-			case 4:  //Rattitude //第二上升模态
-				_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max_rad + math::radians(10.0f);
-				_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
-				break;
-
-			case 8:  //ARCO  //第三下降模态
-				_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max_rad + math::radians(-6.0f);
-				_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max_rad, _parameters.man_pitch_max_rad);
-				break;
-		}
 	}
 	//上面是三个模态的POS仿写的处理过程
 	
@@ -2495,10 +2475,12 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 	// manual attitude control,手动控制下不用tecs算出来的pitch
 	use_tecs_pitch &= !(_control_mode_current == FW_POSCTRL_MODE_OTHER);
 
-	//发电三模态重定义七
-	if(_control_mode.flight_mode_ID==3 ||  _control_mode.flight_mode_ID==4 || _control_mode.flight_mode_ID==8)
+	//发电三模态重定义七 
+	//第一模态以设置期望的空速=实际空速，期望空速的变化不会引起高度的变化，同时还调用TECS希望可以借助pitch定高
+	//第二 第三模态，借助POS的L1锁航向，但是pitch完全由摇杆控，设置模态二默认6度pitch，模态三默认1度pitch，这些在姿态控制中实现
+	if(_control_mode.flight_mode_ID==4 || _control_mode.flight_mode_ID==8)
 	{
-		use_tecs_pitch=false;//三个模态不使用tecs pitch摇杆算作pitch_sp
+		use_tecs_pitch=false;
 	}
 
 	if (use_tecs_pitch) {		

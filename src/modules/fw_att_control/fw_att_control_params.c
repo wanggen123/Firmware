@@ -572,7 +572,7 @@ PARAM_DEFINE_FLOAT(FW_MAN_Y_SC, 1.0f);
  * @max 90.0
  * 
  */
-PARAM_DEFINE_FLOAT(A_BACK_PITCH, 10.0f);
+PARAM_DEFINE_FLOAT(A_BACK_PITCH, 0.0f);
 
 /**
  * second stage rise pitch angle
@@ -584,7 +584,7 @@ PARAM_DEFINE_FLOAT(A_BACK_PITCH, 10.0f);
  * @max 90.0
  * 
  */
-PARAM_DEFINE_FLOAT(A_RISE_PITCH, 3.0f);
+PARAM_DEFINE_FLOAT(A_RISE_PITCH, 6.0f);
 
 /**
  * third stage dive pitch angle
@@ -596,4 +596,4 @@ PARAM_DEFINE_FLOAT(A_RISE_PITCH, 3.0f);
  * @max 90.0
  * 
  */
-PARAM_DEFINE_FLOAT(B_DIVE_PITCH, -5.0f);
+PARAM_DEFINE_FLOAT(B_DIVE_PITCH, 1.0f);

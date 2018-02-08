@@ -1009,54 +1009,49 @@ FixedwingAttitudeControl::task_main()
 				float throttle_sp = 0.0f;
 
 				
+
+				
 				// 这里是STAB,摇杆产生att_sp
 				if (!_vcontrol_mode.flag_control_climb_rate_enabled) 
-				{	
+				{
+					_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
+					_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+					_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.pitchsp_offset_rad;
+					_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+					_att_sp.yaw_body = 0.0f;
+					_att_sp.thrust = _manual.z;
 					int instance;
-					//warnx("%d\n",_vcontrol_mode.flight_mode_ID);
+					orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
+				}
+
+
+				//上面是STAB的att_sp,下面这是第二第三模态下的att_sp来源摇杆非tecs
+				if(_vcontrol_mode.flight_mode_ID==4 || _vcontrol_mode.flight_mode_ID==8)
+				{
 					switch(_vcontrol_mode.flight_mode_ID)
 					{
-						case 1:  //stabilize
-						case 2:
-							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
-							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
-							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.pitchsp_offset_rad;
-							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
-							_att_sp.yaw_body = 0.0f;
-							_att_sp.thrust = _manual.z;									
-							break;					
-							
-						//注意下面这段代码是之前用STAB造三个模态时写的，现在我已经改写成POS造三模态，下面这段代码中的３ 4 8不再起作用
-						case 3:  //altitude //第一后退模态
-							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
-							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
-							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Back_Pitch_rad;
-							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
-							_att_sp.yaw_body = 0.0f;
-							_att_sp.thrust = _manual.z;
-							break;
+						//第一模态以设置期望的空速=实际空速，期望空速的变化不会引起高度的变化，同时还调用TECS希望可以借助pitch定高
+						//第二 第三模态，借助POS的L1锁航向，但是pitch完全由摇杆控，设置模态二默认6度pitch，模态三默认1度pitch，这些在姿态控制中实现
+						// case 3:  //Follow //第一后退模态
+						// 	_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Back_Pitch_rad;
+						// 	_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
+						// 	break;
 
-						case 4:  //Rattitude //第二上升模态
-							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
-							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
+						case 4:  //Ratt //第二上升模态
 							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Rise_Pitch_rad;
 							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
-							_att_sp.yaw_body = 0.0f;
-							_att_sp.thrust = _manual.z;
 							break;
 
 						case 8:  //ARCO  //第三下降模态
-							_att_sp.roll_body = _manual.y * _parameters.man_roll_max + _parameters.rollsp_offset_rad;
-							_att_sp.roll_body = math::constrain(_att_sp.roll_body, -_parameters.man_roll_max, _parameters.man_roll_max);
 							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Dive_Pitch_rad;
 							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
-							_att_sp.yaw_body = 0.0f;
-							_att_sp.thrust = _manual.z;
+							break;
+						default:
+							_att_sp.pitch_body=1;
 							break;
 					}
-
-					orb_publish_auto(_attitude_setpoint_id, &_attitude_sp_pub, &_att_sp, &instance, ORB_PRIO_DEFAULT);
 				}
+
 
 				//上面是STAB,摇杆产生att_sp，如果是ALT POS AUTO将不会进入上面if,而是下面这几句:从位置控制中获取att_sp
 				roll_sp = _att_sp.roll_body;

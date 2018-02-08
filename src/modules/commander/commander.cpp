@@ -3665,7 +3665,7 @@ set_control_mode()
 
 	//第一模态：以POS模式重新封装的 FOLLOW 作为第一模态以期望定高后退发电
 	case vehicle_status_s::NAVIGATION_STATE_AUTO_FOLLOW_TARGET:
-		//warnx("%s\n","finally first mode ARCO");
+		//warnx("%s\n","finally first mode FOLLOW");
 		control_mode.flight_mode_ID=3;
 		control_mode.flag_control_manual_enabled = true;
 		control_mode.flag_control_auto_enabled = false;
