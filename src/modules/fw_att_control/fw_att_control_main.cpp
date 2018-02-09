@@ -1038,6 +1038,19 @@ FixedwingAttitudeControl::task_main()
 						// 	break;
 
 						case 4:  //Ratt //第二上升模态
+						
+							//计算高度角三							
+							if(_att_sp.angle_dady_height > 65.0f) //如果高度角大于65度
+							{
+								float err_angle= (_att_sp.angle_dady_height - 65.0f)/2; //高度角每上升两度，pitch迎角减少1度
+								_parameters.Rise_Pitch_rad = _parameters.Rise_Pitch_rad - math::radians(err_angle); //高度角超过 减去一度pitch_sp
+								if(_parameters.Rise_Pitch_rad <  math::radians(1.0f))
+								{
+									_parameters.Rise_Pitch_rad= math::radians(1.0f); //限制最小的迎角为1度
+								}
+
+							} 
+
 							_att_sp.pitch_body = -_manual.x * _parameters.man_pitch_max + _parameters.Rise_Pitch_rad;
 							_att_sp.pitch_body = math::constrain(_att_sp.pitch_body, -_parameters.man_pitch_max, _parameters.man_pitch_max);
 							break;

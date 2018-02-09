@@ -32,5 +32,7 @@ bool apply_flaps
 
 float32 landing_gear
 
+float32 angle_dady_height       #计算高度角一 这是老爸点的高度角，主要用来限制第二上升模态中的迎角防止飞机飞过头顶（容易炸机）
+
 # WAS vehicle_attitude_setpoint mc_virtual_attitude_setpoint fw_virtual_attitude_setpoint
 # TOPICS vehicle_attitude_setpoint

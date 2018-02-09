@@ -1,0 +1,141 @@
+
+限制高度角75度，给第二上升模态限制。
+高度角每增加1度，pitch_sp减1度，最低减到1度，设置参数可调。
+Home点（老爸点）的记录。
+
+
+任务：
+
+1.设置一个“高度角参数”
+
+2.限制高度角调用下面下面这个函数可以计算出 两个航点间的水平距离和高度距离
+    float get_distance_to_point_global_wgs84(double lat_now, double lon_now, float alt_now,
+		double lat_next, double lon_next, float alt_next,
+		float *dist_xy, float *dist_z)
+
+    这个函数在sr/lib/ecl/EKF/geo.cpp中定义。
+    在mission_block.cpp中有调用参考。
+
+
+    dist = get_distance_to_point_global_wgs84(_mission_item.lat, _mission_item.lon, curr_sp->alt,
+								_navigator->get_global_position()->lat,
+								_navigator->get_global_position()->lon,
+								_navigator->get_global_position()->alt,
+								&dist_xy, &dist_z);
+
+
+    还有一个函数也可以考虑使用：求两个航点的水平距离。
+    float get_distance_to_next_waypoint(double lat_now, double lon_now, double lat_next, double lon_next)
+
+
+1.这里我使用
+    dist = get_distance_to_point_global_wgs84(_mission_item.lat, _mission_item.lon, curr_sp->alt,
+								_navigator->get_global_position()->lat,
+								_navigator->get_global_position()->lon,
+								_navigator->get_global_position()->alt,
+								&dist_xy, &dist_z);
+
+
+2.  包含头文件
+
+    #include <geo/geo.h> //这个应该是真正的头文件
+    #include <mathlib/mathlib.h>
+
+
+3.现在的位置来源与哪？
+
+    可以订阅 vehicle_global_position.msg
+
+    # Fused global position in WGS84.
+    # This struct contains global position estimation. It is not the raw GPS
+    # measurement (@see vehicle_gps_position). This topic is usually published by the position
+    # estimator, which will take more sources of information into account than just GPS,
+    # e.g. control inputs of the vehicle in a Kalman-filter implementation.
+    #
+
+    float64 lat＃纬度（度）
+    float64 lon＃经度，（度）
+    float32 alt＃高度AMSL，（米）
+
+4.那么老爸角的经度纬度高度怎么获取。
+
+    提前测量准确。
+    能够实时获取吗？唯有保存到已经有的参数里面，保存到某个参数。
+
+
+5.想到一个新的简单的思路，经度纬度的计算 相差0.1度 就是几千米的误差，这个计算不好算。
+
+    如果用local坐标来算，只要保证local坐标每次原点都是老爸点，那么高度角是不是就可以直接计算了。
+
+    //将地理学坐标系(geographic coordinate system)中的点(球)投影到本地方位等距平面(XOY)中
+    int map_projection_project(const struct map_projection_reference_s *ref, double lat, double lon, float *x,float *y)
+  {
+    if (!map_projection_initialized(ref)) {
+        return -1;
+    }
+
+    double lat_rad = lat * M_DEG_TO_RAD; // 度 -> 弧度    A/57.295
+    double lon_rad = lon * M_DEG_TO_RAD; // GPS数据角度单位为弧度
+
+    double sin_lat = sin(lat_rad); //程序中三角运算使用的是弧度
+    double cos_lat = cos(lat_rad);
+    double cos_d_lon = cos(lon_rad - ref->lon_rad);
+
+    double arg = ref->sin_lat * sin_lat + ref->cos_lat * cos_lat * cos_d_lon;
+
+    if (arg > 1.0) {
+        arg = 1.0;
+
+    } else if (arg < -1.0) {
+        arg = -1.0;  //限幅
+    }
+
+    double c = acos(arg);
+    double k = (fabs(c) < DBL_EPSILON) ? 1.0 : (c / sin(c));// c为正数
+
+    *x = k * (ref->cos_lat * sin_lat - ref->sin_lat * cos_lat * cos_d_lon) * CONSTANTS_RADIUS_OF_EARTH;
+    *y = k * cos_lat * sin(lon_rad - ref->lon_rad) * CONSTANTS_RADIUS_OF_EARTH;
+
+    return 0;
+}
+
+
+
+
+
+
+以上提供了一些思路，但是目前我时间有限，不再考虑这么多，
+直接使用一下函数计算高度角
+
+1. dist_xy  dist_z
+ dist = get_distance_to_point_global_wgs84(_mission_item.lat, _mission_item.lon, curr_sp->alt,
+								_navigator->get_global_position()->lat,
+								_navigator->get_global_position()->lon,
+								_navigator->get_global_position()->alt,
+								&dist_xy, &dist_z);
+
+
+2.
+    #include <float.h>
+    #include <mathlib/mathlib.h>
+    #include <geo/geo.h>
+    #include <ecl/ecl.h>
+
+    调用路径包含应该到同一级目录！
+
+    float eta;
+    eta = atan2f(xtrack_vel, ltrack_vel);
+
+    如此算出高度角，根据上升中的高度角限制迎角pitch_sp.
+
+
+3.高度角的使用位置
+
+    高度角的使用应该放在姿态控制中，调节pitch——sp
+
+4.那么高度角放在哪里计算呢？
+
+    放在位置控制中
+
+ 
+此修改可以全局搜索“计算高度角”查看。

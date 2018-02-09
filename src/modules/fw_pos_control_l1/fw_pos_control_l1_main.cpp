@@ -2309,6 +2309,33 @@ FixedwingPositionControl::control_position(const math::Vector<2> &current_positi
 			_att_sp.roll_body = _manual.y * _parameters.man_roll_max_rad; //副翼的最大舵面45度 在fw_att_control_params中定义的
 			_att_sp.yaw_body = 0;
 		}
+
+		
+		//计算高度角二,在第二上升模态中才计算
+		if(_control_mode.flight_mode_ID==4 )
+		{		 
+			float dist = 1.0f;
+			float dist_xy = 1.0f;
+			float dist_z = 0.0f;
+
+			//float小数点后有效精度6位
+			//double小数点后有效精度16位置
+			double dady_lat = 39.5569128293882;
+			double dady_lon = 117.403949431853;
+			float  dady_alt = 4.495;
+
+			dist = get_distance_to_point_global_wgs84(dady_lat, dady_lon, dady_alt,
+						_global_pos.lat, _global_pos.lon, _global_pos.alt,
+						&dist_xy, &dist_z);
+			
+			dist = dist+0.0f;
+
+			_att_sp.angle_dady_height = math::degrees( atan2f(dist_z, dist_xy) );//弧度转化为角度	
+
+		}
+		
+
+
 	}
 	//上面是三个模态的POS仿写的处理过程
 	
