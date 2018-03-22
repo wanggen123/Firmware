@@ -730,8 +730,12 @@ HMC5883::ioctl(struct file *filp, int cmd, unsigned long arg)
 		/* not supported, no internal filtering */
 		return -EINVAL;
 
+	//磁力计使用五 这是之前校准的结果参数scale和offset传递给驱动使用的中间通道
+	//磁力计使用八 
+	//传递的过程有两种，其一在commander中处理的，在地面站校准的时候发生的
+	//其二每次重启时加载校准参数，在sensor.cpp中处理的，也是通过MAGIOCGSCALE到这里加载校准结果的
 	case MAGIOCSSCALE:
-		/* set new scale factors */
+		//从arg拷贝到scale，加载校准结果的参数，用作publish之前的数据处理
 		memcpy(&_scale, (struct mag_calibration_s *)arg, sizeof(_scale));
 		/* check calibration, but not actually return an error */
 		(void)check_calibration();
@@ -1007,6 +1011,7 @@ HMC5883::collect()
 	// apply user specified rotation
 	rotate_3f(_rotation, xraw_f, yraw_f, zraw_f);
 
+	//磁力计使用九 这是磁力计校准结果的使用之处，在数据publish之前
 	new_report.x = ((xraw_f * _range_scale) - _scale.x_offset) * _scale.x_scale;
 	/* flip axes and negate value for y */
 	new_report.y = ((yraw_f * _range_scale) - _scale.y_offset) * _scale.y_scale;

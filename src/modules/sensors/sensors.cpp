@@ -1726,7 +1726,9 @@ Sensors::parameter_update_poll(bool forced)
 
 					} else {
 
-						/* apply new scaling and offsets */
+						//磁力计使用六  apply new scaling and offsets
+						//上面已经从系统参数中获取磁力计校准结果的参数到mscale中
+						//下面的目的是把这个校准参数传递到hmc5883的驱动中
 						config_ok = apply_mag_calibration(h, &mscale, device_id);
 
 						if (!config_ok) {
@@ -1798,6 +1800,7 @@ Sensors::apply_mag_calibration(DevHandle &h, const struct mag_calibration_s *mca
 #if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 
 	/* On most systems, we can just use the IOCTL call to set the calibration params. */
+	//磁力计使用七 在大多数系统中，我们可以调用IOCTL来设置校准参数。
 	return !h.ioctl(MAGIOCSSCALE, (long unsigned int)mcal);
 
 #else

@@ -94,6 +94,12 @@ typedef struct  {
 } mag_worker_data_t;
 
 
+
+//磁力计使用二 
+//磁力计的校准，磁力计的校准就是为拿到scale和offset参数
+//mag scaling factors; Vout = (Vin * Vscale) + Voffset 
+//函数里主要做两部分工作：其一判断当前有哪些磁力计可用  其二校准可用的磁力计
+
 int do_mag_calibration(orb_advert_t *mavlink_log_pub)
 {
 	calibration_log_info(mavlink_log_pub, CAL_QGC_STARTED_MSG, sensor_name);
@@ -106,10 +112,11 @@ int do_mag_calibration(orb_advert_t *mavlink_log_pub)
 	mscale_null.z_offset = 0.0f;
 	mscale_null.z_scale = 1.0f;
 
+	//result是此函数处理返回的结果：两种结果PX4_OK 不OK
 	int result = PX4_OK;
 
 	// Determine which mags are available and reset each
-
+	//系统支持最多三个磁力计，下面判断有几个磁力计可用
 	char str[30];
 
 	for (size_t i=0; i < max_mags; i++) {
@@ -119,7 +126,7 @@ int do_mag_calibration(orb_advert_t *mavlink_log_pub)
 	_last_mag_progress = 0;
 
 	for (unsigned cur_mag = 0; cur_mag < max_mags; cur_mag++) {
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
+	#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 		// Reset mag id to mag not available
 		(void)sprintf(str, "CAL_MAG%u_ID", cur_mag);
 		result = param_set_no_notification(param_find(str), &(device_ids[cur_mag]));
@@ -127,7 +134,7 @@ int do_mag_calibration(orb_advert_t *mavlink_log_pub)
 			calibration_log_info(mavlink_log_pub, "[cal] Unable to reset CAL_MAG%u_ID", cur_mag);
 			break;
 		}
-#else
+	#else
 		(void)sprintf(str, "CAL_MAG%u_XOFF", cur_mag);
 		result = param_set(param_find(str), &mscale_null.x_offset);
 		if (result != PX4_OK) {
@@ -158,12 +165,13 @@ int do_mag_calibration(orb_advert_t *mavlink_log_pub)
 		if (result != PX4_OK) {
 			PX4_ERR("unable to reset %s", str);
 		}
-#endif
+	#endif
 
-/* for calibration, commander will run on apps, so orb messages are used to get info from dsp */
-#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
+	/* for calibration, commander will run on apps, so orb messages are used to get info from dsp */
+	#if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 		// Attempt to open mag
 		(void)sprintf(str, "%s%u", MAG_BASE_DEVICE_PATH, cur_mag);
+		//以只读的方式打开磁力计文件描述符
 		int fd = px4_open(str, O_RDONLY);
 		if (fd < 0) {
 			continue;
@@ -192,17 +200,19 @@ int do_mag_calibration(orb_advert_t *mavlink_log_pub)
 		}
 
 		px4_close(fd);
-#endif
+	#endif
 	}
 
-	// Calibrate all mags at the same time
+	// Calibrate all mags at the same time 同时校准所有的磁力计
 	if (result == PX4_OK) {
+		//磁力计使用三 磁力计校准的实现，函数里得到校准的offset和scale，返回的结果有 ：calibrate_return_ok ,calibrate_return_error ，calibrate_return_cancelled
 		switch (mag_calibrate_all(mavlink_log_pub)) {
+			//校准取消 
 			case calibrate_return_cancelled:
 				// Cancel message already displayed, we're done here
 				result = PX4_ERROR;
 				break;
-
+			//校准ok，则
 			case calibrate_return_ok:
 				/* auto-save to EEPROM */
 				result = param_save_default();
@@ -430,6 +440,11 @@ static calibrate_return mag_calibration_worker(detect_orientation_return orienta
 	return result;
 }
 
+
+//磁力计使用三 磁力计校准的实现，函数里得到校准结果参数的offset和scale
+//输入：mavlink_log_pub用作地面站的显示
+//输出：result ：校准好了calibrate_return_ok , 校准失败calibrate_return_error ，取消校准calibrate_return_cancelled
+
 calibrate_return mag_calibrate_all(orb_advert_t *mavlink_log_pub)
 {
 	calibrate_return result = calibrate_return_ok;
@@ -447,7 +462,7 @@ calibrate_return mag_calibrate_all(orb_advert_t *mavlink_log_pub)
 	uint32_t cal_mask = (1 << 6) - 1;
 	param_get(param_find("CAL_MAG_SIDES"), &cal_mask);
 
-	calibration_sides = 0;
+	calibration_sides = 0; //用来表示校准的6个面
 
 	for (unsigned i = 0; i < (sizeof(worker_data.side_data_collected) /
 		sizeof(worker_data.side_data_collected[0])); i++) {
@@ -675,6 +690,7 @@ calibrate_return mag_calibrate_all(orb_advert_t *mavlink_log_pub)
 				}
 
 				if (result == calibrate_return_ok) {
+					//磁力计使用四 把校准的结果通过MAGIOCGSCALE传递给hmc5883.cpp的驱动使用
 					if (px4_ioctl(fd_mag, MAGIOCGSCALE, (long unsigned int)&mscale) != PX4_OK) {
 						calibration_log_critical(mavlink_log_pub, "[cal] ERROR: failed to get current calibration #%u", cur_mag);
 						result = calibrate_return_error;

@@ -4049,6 +4049,7 @@ void *commander_low_prio_loop(void *arg)
 					} else if ((int)(cmd.param2) == 1) {
 						/* magnetometer calibration */
 						answer_command(cmd, vehicle_command_s::VEHICLE_CMD_RESULT_ACCEPTED, command_ack_pub, command_ack);
+						//磁力计使用一 地面站校准的入口，其他传感器地面站校准的入口也在这里
 						calib_ret = do_mag_calibration(&mavlink_log_pub);
 
 					} else if ((int)(cmd.param3) == 1) {
