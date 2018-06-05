@@ -125,9 +125,9 @@ Takeoff::set_takeoff_position()
 
 
 	//下面高度逻辑，如果offboard发来高度，好啊，但是不能太低。如果没人设置就用飞控自己默认的高度，但是飞机都已经飞得很高了再切takeoff，那就hold吧
+	//abs_altitude就是最终确定的起飞高度。
 
-	//offboard模式在会在navigator_main.cpp 482行源码里给_takeoff_triplet航点赋值
-	//rep表示offboard模式下给的航点信息
+	//rep表示offboard模式下给的航点信息，如果是offboard则在navigator_main.cpp 482行源码里已经给_takeoff_triplet航点赋值，下面的rep拿到已经是填充好了offboard参数的航点，否则拿到的就是一片空闲空间
 	struct position_setpoint_triplet_s *rep = _navigator->get_takeoff_triplet();
 
 	//临时变量，用来保存offboard模式下对起飞高度的设置值
@@ -166,10 +166,12 @@ Takeoff::set_takeoff_position()
 				     "Already higher than takeoff altitude");
 	}
 
+	//abs_altitude就是最终确定的起飞高度。高度已经确定，下面应该定经度 维度等其余起飞相关信息。
+
 
 	
 	//第二步 把航点信息打包到_mission_item结构体中，并更新一些标志
-	// set current mission item to takeoff
+	// set current mission item to takeoff，默认在原地垂直起飞到上方。
 	set_takeoff_item(&_mission_item, abs_altitude);
 	_navigator->get_mission_result()->reached = false; //航点有没有达到 第一次进来没有达到
 	_navigator->get_mission_result()->finished = false;//任务有没有完成 第一次进来任务没有完成
@@ -177,9 +179,9 @@ Takeoff::set_takeoff_position()
 	reset_mission_item_reached();
 
 
-	//第三步 再把_mission_item结构体 复制到pos_sp_triplet->current
+	//第三步 再把_mission_item结构体 复制到pos_sp_triplet->current，这个在位置控制中使用。
 	// convert mission item to current setpoint
-	struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet(); //这是拿数据存储空间
+	struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet(); //这是拿数据存储空间，就是在初始化结构体指针
 	pos_sp_triplet->previous.valid = false;
 	mission_item_to_position_setpoint(&_mission_item, &pos_sp_triplet->current);
 	pos_sp_triplet->current.yaw = _navigator->get_home_position()->yaw;
@@ -187,7 +189,7 @@ Takeoff::set_takeoff_position()
 	pos_sp_triplet->next.valid = false;
 
 
-	//offboard对偏航yaw 经纬度有设置吗？有，就是覆盖。最上面是offboard对高度的要求
+	//上面只是处理了offboard的高度设置问题，如果offboard对偏航yaw 经纬度也有设置，那就覆盖
 	if (rep->current.valid) {
 
 		// Go on and check which changes had been requested
@@ -209,7 +211,8 @@ Takeoff::set_takeoff_position()
 	_navigator->set_can_loiter_at_sp(true);
 
 
-	//上面一系列处理就是为得到position_setpoint_triplet
-	//在navigator_main.cpp中发布，通知位置控制position_setpoint_triplet消息更新了，你可以去做takeoff动作了。
+	//上面一系列处理：高度 经度 纬度等，已经填充好了position_setpoint_triplet
 	_navigator->set_position_setpoint_triplet_updated();
+	//在navigator_main.cpp中发布，通知位置控制position_setpoint_triplet更新了，你可以去做takeoff动作了。
+	//建议看到这先不用去看其他模式下，跟随_pos_sp_triplet_updated到navigator.cpp看发布，跟随position_setpoint_triplet到位置控制里看使用过程。
 }

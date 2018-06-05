@@ -1086,6 +1086,8 @@ MulticopterPositionControl::cross_sphere_line(const math::Vector<3> &sphere_c, f
 	}
 }
 
+
+//AUTO模式在navigator中处理产生_pos_sp_triplet，在这里承接 产生一些中间过渡航点，而后由位置控制一步一步飞向current目标。
 void MulticopterPositionControl::control_auto(float dt)
 {
 	/* reset position setpoint on AUTO mode activation or if we are not in MC mode */

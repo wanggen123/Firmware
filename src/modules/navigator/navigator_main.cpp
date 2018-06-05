@@ -432,6 +432,9 @@ Navigator::task_main()
 		//VEHICLE_CMD_DO_PAUSE_CONTINUE
 		//可以收起括号，看到这5个command。根据mavlink消息参数，填充rep，从在飞行模式cpp文件中调用。
 
+		//这是地面站发送的command，你看下面还带着几个参数的应该就是mavlink控制指令。
+		//也可以是offboard发送的指令，用offboard发送mavlink指令。
+		//下面的可以从offboard发送mavlink控制指令来理解。
 		orb_check(_vehicle_command_sub, &updated);
 		if (updated) {
 			vehicle_command_s cmd;
@@ -576,7 +579,7 @@ Navigator::task_main()
 
 
 
-
+		//上面都在准备航点数据，有些数据来源与offboard，有些是地理围栏的数据。下面判断是什么飞行模式。
 		//navigator入口流程二 （可全局搜索navigator入口流程）
 		//vehicle_status.msg中的nav_state为commander文件夹中处理得到的最终飞行模式
 		
@@ -671,7 +674,7 @@ Navigator::task_main()
 		if (_navigation_mode == nullptr && !_pos_sp_triplet_published_invalid_once) {
 			_pos_sp_triplet_published_invalid_once = true;
 			_pos_sp_triplet.previous.valid = false;
-			_pos_sp_triplet.current.valid = false;
+			_pos_sp_triplet.current.valid = false; //即只有在高级模式下这些current等才有效，在手动模式下这些都无效，位置控制中这部分都会略过。
 			_pos_sp_triplet.next.valid = false;
 			_pos_sp_triplet_updated = true;
 		}
