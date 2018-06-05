@@ -1156,14 +1156,15 @@ Sensors::accel_poll(struct sensor_combined_s &raw)
 {
 	bool got_update = false;
 
-	for (unsigned i = 0; i < _accel.subscription_count; i++) {
+	for (unsigned i = 0; i < _accel.subscription_count; i++) //对订阅的每个进行检查数据更新
+	{
 		bool accel_updated;
 		orb_check(_accel.subscription[i], &accel_updated);
 
 		if (accel_updated) {
 			struct accel_report accel_report;
 
-			orb_copy(ORB_ID(sensor_accel), _accel.subscription[i], &accel_report);
+			orb_copy(ORB_ID(sensor_accel), _accel.subscription[i], &accel_report); //有更新拷贝出来
 
 			if (accel_report.timestamp == 0) {
 				continue; //ignore invalid data
@@ -2457,17 +2458,17 @@ Sensors::task_main_trampoline(int argc, char *argv[])
 void
 Sensors::init_sensor_class(const struct orb_metadata *meta, SensorData &sensor_data)
 {
-	unsigned group_count = orb_group_count(meta);
+	unsigned group_count = orb_group_count(meta);//判断这个主题的消息有几个在公告发布
 
-	if (group_count > SENSOR_COUNT_MAX) {
+	if (group_count > SENSOR_COUNT_MAX) { //系统支持最多三组IMU
 		group_count = SENSOR_COUNT_MAX;
 	}
 
-	for (unsigned i = 0; i < group_count; i++) {
+	for (unsigned i = 0; i < group_count; i++) { //依次订阅同一个主题发布的数据
 		if (sensor_data.subscription[i] < 0) {
 			sensor_data.subscription[i] = orb_subscribe_multi(meta, i);
 
-			if (i > 0) {
+			if (i > 0) { //如果订阅成功
 				/* the first always exists, but for each further sensor, add a new validator */
 				if (!sensor_data.voter.add_new_validator()) {
 					PX4_ERR("failed to add validator for sensor %s %i", meta->o_name, i);
@@ -2475,12 +2476,12 @@ Sensors::init_sensor_class(const struct orb_metadata *meta, SensorData &sensor_d
 			}
 		}
 
-		int32_t priority;
+		int32_t priority; //下面是调用orb系统函数，获取订阅到的这个主题的优先级，优先级是它在发布的时候设置的
 		orb_priority(sensor_data.subscription[i], &priority);
 		sensor_data.priority[i] = (uint8_t)priority;
 	}
 
-	sensor_data.subscription_count = group_count;
+	sensor_data.subscription_count = group_count; //在sensor_data中记录了每个meta的订阅的句柄 优先级，后面会用的
 }
 
 void
@@ -2491,18 +2492,18 @@ Sensors::task_main()
 	int ret = 0;
 
 	/* This calls a sensors_init which can have different implementations on NuttX, POSIX, QURT. */
-	ret = sensors_init();
+	ret = sensors_init(); //判断传感器 加速度 陀螺仪 磁力计 气压计是否存在，且读取一次看传感器工作是否正常。
 
 #if !defined(__PX4_QURT) && !defined(__PX4_POSIX_RPI) && !defined(__PX4_POSIX_BEBOP)
 	// TODO: move adc_init into the sensors_init call.
-	ret = ret || adc_init();
+	ret = ret || adc_init(); //判断ADC通道是否正常。
 #endif
 
 	if (ret) {
 		PX4_ERR("sensor initialization failed");
 	}
 
-	struct sensor_combined_s raw = {};
+	struct sensor_combined_s raw = {}; //这就是最后发布的sensor_combined主题数据内容
 
 	raw.accelerometer_timestamp_relative = sensor_combined_s::RELATIVE_TIMESTAMP_INVALID;
 
@@ -2510,12 +2511,12 @@ Sensors::task_main()
 
 	raw.baro_timestamp_relative = sensor_combined_s::RELATIVE_TIMESTAMP_INVALID;
 
-	struct sensor_preflight_s preflt = {};
+	struct sensor_preflight_s preflt = {}; //飞行前的检查 加速度和陀螺仪的一致性的检查
 
 	/*
 	 * do subscriptions
 	 */
-	init_sensor_class(ORB_ID(sensor_gyro), _gyro);
+	init_sensor_class(ORB_ID(sensor_gyro), _gyro);//定于了这个主题的所有的发布，并获取每个发布的优先级
 
 	init_sensor_class(ORB_ID(sensor_mag), _mag);
 
@@ -2524,7 +2525,7 @@ Sensors::task_main()
 	init_sensor_class(ORB_ID(sensor_baro), _baro);
 
 	/* reload calibration params */
-	parameter_update_poll(true);
+	parameter_update_poll(true); //更新系统参数，尤其是加载校准的参数是在这里的reload calibration params
 
 	_rc_sub = orb_subscribe(ORB_ID(input_rc));
 
