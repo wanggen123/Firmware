@@ -62,9 +62,9 @@
 #include <nuttx/wqueue.h>
 #include <nuttx/clock.h>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
-#include <systemlib/param/param.h>
+#include <parameters/param.h>
 
 #include <conversion/rotation.h>
 
@@ -74,7 +74,6 @@
 #include <drivers/device/ringbuffer.h>
 
 #include <uORB/uORB.h>
-#include <uORB/topics/subsystem_info.h>
 #include <uORB/topics/optical_flow.h>
 #include <uORB/topics/distance_sensor.h>
 
@@ -144,7 +143,11 @@ private:
 	perf_counter_t		_comms_errors;
 
 	unsigned                 _conversion_interval;
+
 	enum Rotation       _sensor_rotation;
+	float 				_sensor_min_range;
+	float 				_sensor_max_range;
+	float 				_sensor_max_flow_rate;
 
 	/**
 	 * Test whether the device supported by the driver is present at a
@@ -268,12 +271,39 @@ PX4FLOW::init()
 	/* get yaw rotation from sensor frame to body frame */
 	param_t rot = param_find("SENS_FLOW_ROT");
 
-	/* only set it if the parameter exists */
 	if (rot != PARAM_INVALID) {
 		int32_t val = 6; // the recommended installation for the flow sensor is with the Y sensor axis forward
 		param_get(rot, &val);
 
 		_sensor_rotation = (enum Rotation)val;
+	}
+
+	/* get operational limits of the sensor */
+	param_t hmin = param_find("SENS_FLOW_MINHGT");
+
+	if (hmin != PARAM_INVALID) {
+		float val = 0.7;
+		param_get(hmin, &val);
+
+		_sensor_min_range = val;
+	}
+
+	param_t hmax = param_find("SENS_FLOW_MAXHGT");
+
+	if (hmax != PARAM_INVALID) {
+		float val = 3.0;
+		param_get(hmax, &val);
+
+		_sensor_max_range = val;
+	}
+
+	param_t ratemax = param_find("SENS_FLOW_MAXR");
+
+	if (ratemax != PARAM_INVALID) {
+		float val = 2.5;
+		param_get(ratemax, &val);
+
+		_sensor_max_flow_rate = val;
 	}
 
 	return ret;
@@ -537,6 +567,12 @@ PX4FLOW::collect()
 
 	report.sensor_id = 0;
 
+	report.max_flow_rate = _sensor_max_flow_rate;
+
+	report.min_ground_distance = _sensor_min_range;
+
+	report.max_ground_distance = _sensor_max_range;
+
 	/* rotate measurements in yaw from sensor frame to body frame according to parameter SENS_FLOW_ROT */
 	float zeroval = 0.0f;
 
@@ -587,22 +623,6 @@ PX4FLOW::start()
 
 	/* schedule a cycle to start things */
 	work_queue(HPWORK, &_work, (worker_t)&PX4FLOW::cycle_trampoline, this, 1);
-
-	/* notify about state change */
-	struct subsystem_info_s info = {};
-	info.present = true;
-	info.enabled = true;
-	info.ok = true;
-	info.subsystem_type = subsystem_info_s::SUBSYSTEM_TYPE_OPTICALFLOW;
-
-	static orb_advert_t pub = nullptr;
-
-	if (pub != nullptr) {
-		orb_publish(ORB_ID(subsystem_info), pub, &info);
-
-	} else {
-		pub = orb_advertise(ORB_ID(subsystem_info), &info);
-	}
 }
 
 void
@@ -754,6 +774,10 @@ start(int argc, char *argv[])
 #ifdef PX4_I2C_BUS_ONBOARD
 			PX4_I2C_BUS_ONBOARD,
 #endif
+#ifdef PX4_I2C_BUS_EXPANSION1
+			PX4_I2C_BUS_EXPANSION1,
+#endif
+
 			-1
 		};
 
@@ -872,11 +896,7 @@ test()
 		warnx("immediate read failed");
 	}
 
-	warnx("single read");
-	warnx("pixel_flow_x_integral: %i", f_integral.pixel_flow_x_integral);
-	warnx("pixel_flow_y_integral: %i", f_integral.pixel_flow_y_integral);
-	warnx("framecount_integral: %u",
-	      f_integral.frame_count_since_last_readout);
+	print_message(report);
 
 	/* start the sensor polling at 10Hz */
 	if (OK != ioctl(fd, SENSORIOCSPOLLRATE, 10)) {
@@ -903,25 +923,7 @@ test()
 			err(1, "periodic read failed");
 		}
 
-		warnx("periodic read %u", i);
-
-		warnx("framecount_total: %u", f.frame_count);
-		warnx("framecount_integral: %u",
-		      f_integral.frame_count_since_last_readout);
-		warnx("pixel_flow_x_integral: %i", f_integral.pixel_flow_x_integral);
-		warnx("pixel_flow_y_integral: %i", f_integral.pixel_flow_y_integral);
-		warnx("gyro_x_rate_integral: %i", f_integral.gyro_x_rate_integral);
-		warnx("gyro_y_rate_integral: %i", f_integral.gyro_y_rate_integral);
-		warnx("gyro_z_rate_integral: %i", f_integral.gyro_z_rate_integral);
-		warnx("integration_timespan [us]: %u", f_integral.integration_timespan);
-		warnx("ground_distance: %0.2f m",
-		      (double) f_integral.ground_distance / 1000);
-		warnx("time since last sonar update [us]: %i",
-		      f_integral.sonar_timestamp);
-		warnx("quality integration average : %i", f_integral.qual);
-		warnx("quality : %i", f.qual);
-
-
+		print_message(report);
 	}
 
 	errx(0, "PASS");

@@ -82,10 +82,12 @@ px4_add_module(
 		sensors/baro.cpp
 
 	DEPENDS
+		mixer
+
 		git_uavcan
-		platforms__common
+
+		# within libuavcan
+		libuavcan_dsdlc
 		uavcan
 		uavcan_stm32_driver
 	)
-
-target_link_libraries(modules__uavcan uavcan uavcan_stm32_driver)

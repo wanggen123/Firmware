@@ -39,8 +39,7 @@
  * @author Lorenz Meier <lorenz@px4.io>
  */
 
-#ifndef NAVIGATOR_H
-#define NAVIGATOR_H
+#pragma once
 
 #include "datalinkloss.h"
 #include "enginefailure.h"
@@ -48,6 +47,7 @@
 #include "geofence.h"
 #include "gpsfailure.h"
 #include "land.h"
+#include "precland.h"
 #include "loiter.h"
 #include "mission.h"
 #include "navigator_mode.h"
@@ -55,10 +55,10 @@
 #include "rtl.h"
 #include "takeoff.h"
 
-#include <controllib/block/BlockParam.hpp>
-#include <controllib/blocks.hpp>
 #include <navigator/navigation.h>
-#include <systemlib/perf_counter.h>
+#include <px4_module_params.h>
+#include <px4_module.h>
+#include <perf/perf_counter.h>
 #include <uORB/topics/fw_pos_ctrl_status.h>
 #include <uORB/topics/geofence_result.h>
 #include <uORB/topics/mission.h>
@@ -66,6 +66,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/position_setpoint_triplet.h>
 #include <uORB/topics/vehicle_attitude_setpoint.h>
+#include <uORB/topics/vehicle_command.h>
 #include <uORB/topics/vehicle_global_position.h>
 #include <uORB/topics/vehicle_gps_position.h>
 #include <uORB/topics/vehicle_land_detected.h>
@@ -75,27 +76,34 @@
 /**
  * Number of navigation modes that need on_active/on_inactive calls
  */
-#define NAVIGATOR_MODE_ARRAY_SIZE 10
+#define NAVIGATOR_MODE_ARRAY_SIZE 11
 
-class Navigator : public control::SuperBlock
+
+class Navigator : public ModuleBase<Navigator>, public ModuleParams
 {
 public:
 	Navigator();
-	~Navigator();
+	virtual ~Navigator() = default;
 	Navigator(const Navigator &) = delete;
 	Navigator operator=(const Navigator &) = delete;
 
-	/**
-	 * Start the navigator task.
-	 *
-	 * @return		OK on success.
-	 */
-	int		start();
+	/** @see ModuleBase */
+	static int task_spawn(int argc, char *argv[]);
 
-	/**
-	 * Display the navigator status.
-	 */
-	void		status();
+	/** @see ModuleBase */
+	static Navigator *instantiate(int argc, char *argv[]);
+
+	/** @see ModuleBase */
+	static int custom_command(int argc, char *argv[]);
+
+	/** @see ModuleBase */
+	static int print_usage(const char *reason = nullptr);
+
+	/** @see ModuleBase::run() */
+	void run() override;
+
+	/** @see ModuleBase::print_status() */
+	int print_status() override;
 
 	/**
 	 * Load fence from file
@@ -147,13 +155,13 @@ public:
 	struct vehicle_land_detected_s *get_land_detected() { return &_land_detected; }
 	struct vehicle_local_position_s *get_local_position() { return &_local_pos; }
 	struct vehicle_status_s *get_vstatus() { return &_vstatus; }
+	PrecLand *get_precland() { return &_precland; } /**< allow others, e.g. Mission, to use the precision land block */
 
 	const vehicle_roi_s &get_vroi() { return _vroi; }
 
 	bool home_alt_valid() { return (_home_pos.timestamp > 0 && _home_pos.valid_alt); }
 	bool home_position_valid() { return (_home_pos.timestamp > 0 && _home_pos.valid_alt && _home_pos.valid_hpos); }
 
-	int		get_onboard_mission_sub() { return _onboard_mission_sub; }
 	int		get_offboard_mission_sub() { return _offboard_mission_sub; }
 
 	Geofence	&get_geofence() { return _geofence; }
@@ -242,21 +250,27 @@ public:
 	bool		is_planned_mission() const { return _navigation_mode == &_mission; }
 	bool		on_mission_landing() { return _mission.landing(); }
 	bool		start_mission_landing() { return _mission.land_start(); }
+	bool		mission_start_land_available() { return _mission.get_land_start_available(); }
 
 	// RTL
-	bool		mission_landing_required() { return _rtl.mission_landing_required(); }
+	bool		mission_landing_required() { return _rtl.rtl_type() == RTL::RTL_LAND; }
+	int			rtl_type() { return _rtl.rtl_type(); }
+	bool		in_rtl_state() const { return _vstatus.nav_state == vehicle_status_s::NAVIGATION_STATE_AUTO_RTL; }
 
 	bool		abort_landing();
 
 	// Param access
 	float		get_loiter_min_alt() const { return _param_loiter_min_alt.get(); }
-	bool		force_vtol() const { return _vstatus.is_vtol && !_vstatus.is_rotary_wing && _param_force_vtol.get(); }
+	float		get_takeoff_min_alt() const { return _param_takeoff_min_alt.get(); }
+	float		get_yaw_timeout() const { return _param_yaw_timeout.get(); }
+	float		get_yaw_threshold() const { return _param_yaw_err.get(); }
+
+	float		get_vtol_back_trans_deceleration() const { return _param_back_trans_dec_mss.get(); }
+	float		get_vtol_reverse_delay() const { return _param_reverse_delay.get(); }
+
+	bool		force_vtol();
 
 private:
-
-	bool		_task_should_exit{false};	/**< if true, sensor task should exit */
-	int		_navigator_task{-1};		/**< task handle for sensor task */
-
 	int		_fw_pos_ctrl_status_sub{-1};	/**< notification of vehicle capabilities updates */
 	int		_global_pos_sub{-1};		/**< global position subscription */
 	int		_gps_pos_sub{-1};		/**< gps position subscription */
@@ -264,9 +278,7 @@ private:
 	int		_land_detected_sub{-1};		/**< vehicle land detected subscription */
 	int		_local_pos_sub{-1};		/**< local position subscription */
 	int		_offboard_mission_sub{-1};	/**< offboard mission subscription */
-	int		_onboard_mission_sub{-1};	/**< onboard mission subscription */
 	int		_param_update_sub{-1};		/**< param update subscription */
-	int		_sensor_combined_sub{-1};	/**< sensor combined subscription */
 	int		_traffic_sub{-1};		/**< traffic subscription */
 	int		_vehicle_command_sub{-1};	/**< vehicle commands (onboard and offboard) */
 	int		_vstatus_sub{-1};		/**< vehicle status subscription */
@@ -283,13 +295,12 @@ private:
 	fw_pos_ctrl_status_s				_fw_pos_ctrl_status{};	/**< fixed wing navigation capabilities */
 	home_position_s					_home_pos{};		/**< home position for RTL */
 	mission_result_s				_mission_result{};
-	sensor_combined_s				_sensor_combined{};	/**< sensor values */
 	vehicle_global_position_s			_global_pos{};		/**< global vehicle position */
 	vehicle_gps_position_s				_gps_pos{};		/**< gps position */
 	vehicle_land_detected_s				_land_detected{};	/**< vehicle land_detected */
 	vehicle_local_position_s			_local_pos{};		/**< local vehicle position */
 	vehicle_status_s				_vstatus{};		/**< vehicle status */
-
+	uint8_t					_previous_nav_state{}; /**< nav_state of the previous iteration*/
 	// Publications
 	geofence_result_s				_geofence_result{};
 	position_setpoint_triplet_s			_pos_sp_triplet{};	/**< triplet of position setpoints */
@@ -312,6 +323,7 @@ private:
 	Loiter		_loiter;			/**< class that handles loiter */
 	Takeoff		_takeoff;			/**< class for handling takeoff commands */
 	Land		_land;			/**< class for handling land commands */
+	PrecLand	_precland;			/**< class for handling precision land commands */
 	RTL 		_rtl;				/**< class that handles RTL */
 	RCLoss 		_rcLoss;				/**< class that handles RTL according to OBC rules (rc loss mode) */
 	DataLinkLoss	_dataLinkLoss;			/**< class that handles the OBC datalink loss mode */
@@ -321,16 +333,27 @@ private:
 
 	NavigatorMode *_navigation_mode_array[NAVIGATOR_MODE_ARRAY_SIZE];	/**< array of navigation modes */
 
-	// navigator parameters
-	control::BlockParamFloat _param_loiter_radius;	/**< loiter radius for fixedwing */
-	control::BlockParamFloat _param_acceptance_radius;	/**< acceptance for takeoff */
-	control::BlockParamFloat _param_fw_alt_acceptance_radius;	/**< acceptance radius for fixedwing altitude */
-	control::BlockParamFloat _param_mc_alt_acceptance_radius;	/**< acceptance radius for multicopter altitude */
-	control::BlockParamInt _param_force_vtol;	/**< acceptance radius for multicopter altitude */
-	control::BlockParamInt _param_traffic_avoidance_mode;	/**< avoiding other aircraft is enabled */
+	DEFINE_PARAMETERS(
+		(ParamFloat<px4::params::NAV_LOITER_RAD>) _param_loiter_radius,	/**< loiter radius for fixedwing */
+		(ParamFloat<px4::params::NAV_ACC_RAD>) _param_acceptance_radius,	/**< acceptance for takeoff */
+		(ParamFloat<px4::params::NAV_FW_ALT_RAD>)
+		_param_fw_alt_acceptance_radius,	/**< acceptance radius for fixedwing altitude */
+		(ParamFloat<px4::params::NAV_MC_ALT_RAD>)
+		_param_mc_alt_acceptance_radius,	/**< acceptance radius for multicopter altitude */
+		(ParamInt<px4::params::NAV_FORCE_VT>) _param_force_vtol,	/**< acceptance radius for multicopter altitude */
+		(ParamInt<px4::params::NAV_TRAFF_AVOID>) _param_traffic_avoidance_mode,	/**< avoiding other aircraft is enabled */
 
-	// non-navigator parameters
-	control::BlockParamFloat _param_loiter_min_alt;
+		// non-navigator parameters
+		// Mission (MIS_*)
+		(ParamFloat<px4::params::MIS_LTRMIN_ALT>) _param_loiter_min_alt,
+		(ParamFloat<px4::params::MIS_TAKEOFF_ALT>) _param_takeoff_min_alt,
+		(ParamFloat<px4::params::MIS_YAW_TMT>) _param_yaw_timeout,
+		(ParamFloat<px4::params::MIS_YAW_ERR>) _param_yaw_err,
+
+		// VTOL parameters TODO: get these out of navigator
+		(ParamFloat<px4::params::VT_B_DEC_MSS>) _param_back_trans_dec_mss,
+		(ParamFloat<px4::params::VT_B_REV_DEL>) _param_reverse_delay
+	)
 
 	float _mission_cruising_speed_mc{-1.0f};
 	float _mission_cruising_speed_fw{-1.0f};
@@ -343,19 +366,8 @@ private:
 	void		home_position_update(bool force = false);
 	void		local_position_update();
 	void		params_update();
-	void		sensor_combined_update();
 	void		vehicle_land_detected_update();
 	void		vehicle_status_update();
-
-	/**
-	 * Shim for calling task_main from task_create.
-	 */
-	static void	task_main_trampoline(int argc, char *argv[]);
-
-	/**
-	 * Main task.
-	 */
-	void		task_main();
 
 	/**
 	 * Publish a new position setpoint triplet for position controllers
@@ -369,4 +381,3 @@ private:
 
 	void		publish_vehicle_command_ack(const vehicle_command_s &cmd, uint8_t result);
 };
-#endif

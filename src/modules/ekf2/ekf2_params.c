@@ -137,6 +137,18 @@ PARAM_DEFINE_FLOAT(EKF2_ASP_DELAY, 100);
 PARAM_DEFINE_FLOAT(EKF2_EV_DELAY, 175);
 
 /**
+ * Auxillary Velocity Estimate (e.g from a landing target) delay relative to IMU measurements
+ *
+ * @group EKF2
+ * @min 0
+ * @max 300
+ * @unit ms
+ * @reboot_required true
+ * @decimal 1
+ */
+PARAM_DEFINE_FLOAT(EKF2_AVEL_DELAY, 5);
+
+/**
  * Integer bitmask controlling GPS checks.
  *
  * Set bits to 1 to enable checks. Checks enabled by the following bit positions
@@ -470,14 +482,19 @@ PARAM_DEFINE_INT32(EKF2_DECL_TYPE, 7);
 /**
  * Type of magnetometer fusion
  *
- * Integer controlling the type of magnetometer fusion used - magnetic heading or 3-axis magnetometer.
- * If set to automatic: heading fusion on-ground and 3-axis fusion in-flight with fallback to heading fusion if there is insufficient motion to make yaw or mag biases observable.
+ * Integer controlling the type of magnetometer fusion used - magnetic heading or 3-component vector. The fuson of magnetomer data as a three component vector enables vehicle body fixed hard iron errors to be learned, but requires a stable earth field.
+ * If set to 'Automatic' magnetic heading fusion is used when on-ground and 3-axis magnetic field fusion in-flight with fallback to magnetic heading fusion if there is insufficient motion to make yaw or magnetic field states observable.
+ * If set to 'Magnetic heading' magnetic heading fusion is used at all times
+ * If set to '3-axis' 3-axis field fusion is used at all times.
+ * If set to 'VTOL custom' the behaviour is the same as 'Automatic', but if fusing airspeed, magnetometer fusion is only allowed to modify the magnetic field states. This can be used by VTOL platforms with large magnetic field disturbances to prevent incorrect bias states being learned during forward flight operation which can adversely affect estimation accuracy after transition to hovering flight.
+ * If set to 'MC custom' the behaviour is the same as 'Automatic, but if there are no earth frame position or velocity observations being used, the magnetometer will not be used. This enables vehicles to operate with no GPS in environments where the magnetic field cannot be used to provide a heading reference.
  *
  * @group EKF2
  * @value 0 Automatic
  * @value 1 Magnetic heading
- * @value 2 3-axis fusion
- * @value 3 None
+ * @value 2 3-axis
+ * @value 3 VTOL customn
+ * @value 4 MC custom
  * @reboot_required true
  */
 PARAM_DEFINE_INT32(EKF2_MAG_TYPE, 0);
@@ -593,6 +610,17 @@ PARAM_DEFINE_INT32(EKF2_AID_MASK, 1);
  * @reboot_required true
  */
 PARAM_DEFINE_INT32(EKF2_HGT_MODE, 0);
+
+/**
+ * Maximum lapsed time from last fusion of measurements that constrain velocity drift before the EKF will report the horizontal nav solution as invalid.
+ *
+ * @group EKF2
+ * @group EKF2
+ * @min 500000
+ * @max 10000000
+ * @unit uSec
+ */
+PARAM_DEFINE_INT32(EKF2_NOAID_TOUT, 5000000);
 
 /**
  * Measurement noise for range finder fusion
@@ -714,16 +742,6 @@ PARAM_DEFINE_INT32(EKF2_OF_QMIN, 1);
  * @decimal 1
  */
 PARAM_DEFINE_FLOAT(EKF2_OF_GATE, 3.0f);
-
-/**
- * Optical Flow data will not fused if the magnitude of the flow rate > EKF2_OF_RMAX
- *
- * @group EKF2
- * @min 1.0
- * @unit rad/s
- * @decimal 2
- */
-PARAM_DEFINE_FLOAT(EKF2_OF_RMAX, 2.5f);
 
 /**
  * Terrain altitude process noise - accounts for instability in vehicle height estimate
@@ -882,7 +900,9 @@ PARAM_DEFINE_FLOAT(EKF2_EV_POS_Z, 0.0f);
 
 /**
 * Airspeed fusion threshold. A value of zero will deactivate airspeed fusion. Any other positive
-* value will determine the minimum airspeed which will still be fused.
+* value will determine the minimum airspeed which will still be fused. Set to about 90% of the vehicles stall speed.
+* Both airspeed fusion and sideslip fusion must be active for the EKF to continue navigating after loss of GPS.
+* Use EKF2_FUSE_BETA to activate sideslip fusion.
 *
 * @group EKF2
 * @min 0.0
@@ -895,6 +915,8 @@ PARAM_DEFINE_FLOAT(EKF2_ARSP_THR, 0.0f);
 * Boolean determining if synthetic sideslip measurements should fused.
 *
 * A value of 1 indicates that fusion is active
+* Both  sideslip fusion and airspeed fusion must be active for the EKF to continue navigating after loss of GPS.
+* Use EKF2_ARSP_THR to activate airspeed fusion.
 *
 * @group EKF2
 * @boolean
@@ -978,6 +1000,8 @@ PARAM_DEFINE_FLOAT(EKF2_RNG_PITCH, 0.0f);
  * @min -0.5
  * @max 0.5
  * @reboot_required true
+ * @volatile
+ * @category system
  * @unit mGauss
  * @decimal 3
  */
@@ -991,6 +1015,8 @@ PARAM_DEFINE_FLOAT(EKF2_MAGBIAS_X, 0.0f);
  * @min -0.5
  * @max 0.5
  * @reboot_required true
+ * @volatile
+ * @category system
  * @unit mGauss
  * @decimal 3
  */
@@ -1004,6 +1030,8 @@ PARAM_DEFINE_FLOAT(EKF2_MAGBIAS_Y, 0.0f);
  * @min -0.5
  * @max 0.5
  * @reboot_required true
+ * @volatile
+ * @category system
  * @unit mGauss
  * @decimal 3
  */
@@ -1014,6 +1042,7 @@ PARAM_DEFINE_FLOAT(EKF2_MAGBIAS_Z, 0.0f);
  *
  * @group EKF2
  * @reboot_required true
+ * @category system
  */
 PARAM_DEFINE_INT32(EKF2_MAGBIAS_ID, 0);
 
@@ -1044,7 +1073,12 @@ PARAM_DEFINE_FLOAT(EKF2_MAGB_K, 0.2f);
  *
  * If this parameter is enabled then the estimator will make use of the range finder measurements
  * to estimate it's height even if range sensor is not the primary height source. It will only do so if conditions
- * for range measurement fusion are met.
+ * for range measurement fusion are met. This enables the range finder to be used during low speed and low altitude
+ * operation. Speed and height criteria are controlled by EKF2_RNG_A_VMAX and EKF2_RNG_A_HMAX.
+ * It should not be used for terrain following. It is intended to be used where a vertical takeoff and landing
+ * is performed, and horizontal flight does not occur until above EKF2_RNG_A_HMAX. If vehicle motion causes
+ * repeated switvhing between the rimary height sensor and range finder, an offset in the local position origin
+ * can accumulate. For terrain following, it is recommended to use the MPC_ALT_MODE parameter instead.
  *
  * @group EKF2
  * @value 0 Range aid disabled

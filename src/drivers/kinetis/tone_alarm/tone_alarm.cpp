@@ -113,7 +113,7 @@
 #include "kinetis_tpm.h"
 
 #include <systemlib/err.h>
-#include <systemlib/circuit_breaker.h>
+#include <circuit_breaker/circuit_breaker.h>
 
 #define CAT3_(A, B, C)    A##B##C
 #define CAT3(A, B, C)     CAT3_(A, B, C)
@@ -305,7 +305,7 @@ ToneAlarm::ToneAlarm() :
 	_user_tune(nullptr),
 	_tune(nullptr),
 	_next(nullptr),
-	_cbrk(CBRK_OFF)
+	_cbrk(CBRK_UNINIT)
 {
 	// enable debug() calls
 	//_debug_enabled = true;

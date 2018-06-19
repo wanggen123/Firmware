@@ -52,14 +52,13 @@
 #include <errno.h>
 #include <string>
 
-#include <systemlib/perf_counter.h>
+#include <perf/perf_counter.h>
 #include <systemlib/err.h>
 
 #include <drivers/drv_range_finder.h>
 #include <drivers/drv_hrt.h>
 
 #include <uORB/uORB.h>
-#include <uORB/topics/subsystem_info.h>
 #include <uORB/topics/distance_sensor.h>
 
 #include <board_config.h>

@@ -38,18 +38,26 @@
  * @author Anton Babushkin <anton.babushkin@me.com>
  */
 
-#ifndef NAVIGATOR_RTL_H
-#define NAVIGATOR_RTL_H
+#pragma once
+
+#include <px4_module_params.h>
 
 #include "navigator_mode.h"
 #include "mission_block.h"
 
 class Navigator;
 
-class RTL : public MissionBlock
+class RTL : public MissionBlock, public ModuleParams
 {
 public:
-	RTL(Navigator *navigator, const char *name);
+	enum RTLType {
+		RTL_HOME = 0,
+		RTL_LAND,
+		RTL_MISSION,
+	};
+
+	RTL(Navigator *navigator);
+
 	~RTL() = default;
 
 	void on_inactive() override;
@@ -58,7 +66,7 @@ public:
 
 	void set_return_alt_min(bool min);
 
-	bool mission_landing_required();
+	int rtl_type() const;
 
 private:
 	/**
@@ -84,11 +92,11 @@ private:
 
 	bool _rtl_alt_min{false};
 
-	control::BlockParamFloat _param_return_alt;
-	control::BlockParamFloat _param_descend_alt;
-	control::BlockParamFloat _param_land_delay;
-	control::BlockParamFloat _param_rtl_min_dist;
-	control::BlockParamInt _param_rtl_land_type;
+	DEFINE_PARAMETERS(
+		(ParamFloat<px4::params::RTL_RETURN_ALT>) _param_return_alt,
+		(ParamFloat<px4::params::RTL_DESCEND_ALT>) _param_descend_alt,
+		(ParamFloat<px4::params::RTL_LAND_DELAY>) _param_land_delay,
+		(ParamFloat<px4::params::RTL_MIN_DIST>) _param_rtl_min_dist,
+		(ParamInt<px4::params::RTL_TYPE>) _param_rtl_type
+	)
 };
-
-#endif

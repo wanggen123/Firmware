@@ -60,6 +60,8 @@
 #define PX4IO_SERIAL_VECTOR     STM32_IRQ_USART6
 #define PX4IO_SERIAL_TX_DMAMAP  DMAMAP_USART6_TX_2
 #define PX4IO_SERIAL_RX_DMAMAP  DMAMAP_USART6_RX_2
+#define PX4IO_SERIAL_RCC_REG	STM32_RCC_APB2ENR
+#define PX4IO_SERIAL_RCC_EN	RCC_APB2ENR_USART6EN
 #define PX4IO_SERIAL_CLOCK      STM32_PCLK2_FREQUENCY
 #define PX4IO_SERIAL_BITRATE    1500000			/* 1.5Mbps -> max rate for IO */
 
@@ -173,14 +175,6 @@
 #define PX4_I2C_BUS_ONBOARD     1
 #define PX4_I2C_BUS_EXPANSION   2
 #define PX4_I2C_BUS_LED         PX4_I2C_BUS_ONBOARD
-
-/* Devices on the external bus.
- *
- * Note that these are unshifted addresses.
- */
-#define PX4_I2C_OBDEV_LED       0x55
-#define PX4_I2C_OBDEV_HMC5883   0x1e
-#define PX4_I2C_OBDEV_LIS3MDL   0x1e
 
 /*
  * ADC channels

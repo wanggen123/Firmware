@@ -204,12 +204,26 @@ public:
 	 */
 	virtual unsigned set_trim(float trim) = 0;
 
+	/**
+	 * @brief Get trim offset for this mixer
+	 *
+	 * @return the number of outputs this mixer feeds to
+	 */
+	virtual unsigned get_trim(float *trim) = 0;
+
 	/*
 	 * @brief      Sets the thrust factor used to calculate mapping from desired thrust to pwm.
 	 *
 	 * @param[in]  val   The value
 	 */
 	virtual void 			set_thrust_factor(float val) {}
+
+	/**
+	 * @brief Set airmode. Airmode allows the mixer to increase the total thrust in order to unsaturate the motors.
+	 *
+	 * @param[in]  airmode   De/-activate airmode by setting it to false/true
+	 */
+	virtual void set_airmode(bool airmode) {};
 
 protected:
 	/** client-supplied callback used when fetching control values */
@@ -250,6 +264,14 @@ protected:
 	 * @param tag			character to search for.
 	 */
 	static const char 		*findtag(const char *buf, unsigned &buflen, char tag);
+
+	/**
+	 * Find next tag and return it (0 is returned if no tag is found)
+	 *
+	 * @param buf			The buffer to operate on.
+	 * @param buflen		length of the buffer.
+	 */
+	static char 			findnexttag(const char *buf, unsigned buflen);
 
 	/**
 	 * Skip a line
@@ -326,6 +348,7 @@ public:
 	 *   M: <control count>
 	 *   O: <-ve scale> <+ve scale> <offset> <lower limit> <upper limit>
 	 *
+	 * The second line O: can be omitted. In that case 'O: 10000 10000 0 -10000 10000' is used.
 	 * The definition continues with <control count> entries describing the control
 	 * inputs and their scaling, in the form:
 	 *
@@ -382,12 +405,21 @@ public:
 		return 0;
 	}
 
+	unsigned get_trims(int16_t *values);
+
+	unsigned get_trim(float *trim)
+	{
+		return 0;
+	}
+
 	/**
 	 * @brief      Sets the thrust factor used to calculate mapping from desired thrust to pwm.
 	 *
 	 * @param[in]  val   The value
 	 */
 	virtual void	set_thrust_factor(float val);
+
+	virtual void 	set_airmode(bool airmode);
 
 private:
 	Mixer				*_first;	/**< linked list of mixers */
@@ -428,6 +460,11 @@ public:
 	virtual void			groups_required(uint32_t &groups);
 	virtual void 			set_offset(float trim) {}
 	unsigned set_trim(float trim)
+	{
+		return 0;
+	}
+
+	unsigned get_trim(float *trim)
 	{
 		return 0;
 	}
@@ -507,6 +544,8 @@ public:
 
 	unsigned set_trim(float trim);
 
+	unsigned get_trim(float *trim);
+
 protected:
 
 private:
@@ -546,10 +585,10 @@ public:
 	 * Precalculated rotor mix.
 	 */
 	struct Rotor {
-		float	roll_scale;	/**< scales roll for this rotor */
+		float	roll_scale;		/**< scales roll for this rotor */
 		float	pitch_scale;	/**< scales pitch for this rotor */
-		float	yaw_scale;	/**< scales yaw for this rotor */
-		float	out_scale;	/**< scales total out for this rotor */
+		float	yaw_scale;		/**< scales yaw for this rotor */
+		float	thrust_scale;	/**< scales thrust for this rotor */
 	};
 
 	/**
@@ -617,12 +656,19 @@ public:
 		return _rotor_count;
 	}
 
+	unsigned get_trim(float *trim)
+	{
+		return _rotor_count;
+	}
+
 	/**
 	 * @brief      Sets the thrust factor used to calculate mapping from desired thrust to pwm.
 	 *
 	 * @param[in]  val   The value
 	 */
 	virtual void			set_thrust_factor(float val) {_thrust_factor = val;}
+
+	virtual void 			set_airmode(bool airmode);
 
 	union saturation_status {
 		struct {
@@ -648,6 +694,8 @@ private:
 	float				_idle_speed;
 	float 				_delta_out_max;
 	float 				_thrust_factor;
+
+	bool                		_airmode;
 
 	void update_saturation_status(unsigned index, bool clipping_high, bool clipping_low);
 	saturation_status _saturation_status;
@@ -701,7 +749,8 @@ public:
 	HelicopterMixer(ControlCallback control_cb,
 			uintptr_t cb_handle,
 			mixer_heli_s *mixer_info);
-	~HelicopterMixer();
+
+	~HelicopterMixer() = default;
 
 	/**
 	 * Factory method.
@@ -730,6 +779,11 @@ public:
 	unsigned set_trim(float trim)
 	{
 		return 4;
+	}
+
+	unsigned get_trim(float *trim)
+	{
+		return 0;
 	}
 
 private:

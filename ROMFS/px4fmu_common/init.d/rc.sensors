@@ -3,7 +3,7 @@
 # Standard startup script for sensor drivers.
 #
 
-if ver hwcmp AEROFC_V1
+if ver hwcmp AEROFC_V1 OMNIBUS_F4SD
 then
 	# Aero FC uses separate driver
 else
@@ -31,8 +31,8 @@ else
 	# External SPI
 	ms5611 -S start
 
-	# Internal SPI
-	ms5611 -s start
+	# Internal SPI (auto detect ms5611 or ms5607)
+	ms5611 -T 0 -s start
 
 	# Blacksheep telemetry
 	bst start
@@ -42,13 +42,13 @@ fi
 
 if ver hwcmp NXPHLITE_V3
 then
-	# Internal I2C
+	# Internal I2C (baro)
 	mpl3115a2 -I start
 
-	# Internal SPI
-	fxos8700cq start -a 8 -R 0
+	# Internal SPI (accel + mag)
+	fxos8701cq start -a 8 -R 0
 
-	# Internal SPI
+	# Internal SPI (gyro)
 	fxas21002c start -R 0
 fi
 
@@ -56,6 +56,7 @@ if ver hwcmp AUAV_X21
 then
 	# External I2C bus
 	hmc5883 -C -T -X start
+	lis3mdl -X start
 
 	# Internal SPI bus ICM-20608-G is rotated 90 deg yaw
 	mpu6000 -R 2 -T 20608 start
@@ -135,9 +136,9 @@ then
 		then
 			# v2.0 internal MPU6000 is rotated 180 deg roll, 270 deg yaw
 			mpu6000 -R 14 start
+
 			# v2.0 Has internal hmc5883 on SPI1
 			hmc5883 -C -T -S -R 8 start
-
 		fi
 
 		if [ $BOARD_FMUV3 == 21 ]
@@ -164,6 +165,8 @@ then
 		l3gd20 start
 		lsm303d start
 	fi
+
+	unset BOARD_FMUV3
 fi
 
 if ver hwcmp PX4_SAME70XPLAINED_V1
@@ -189,12 +192,12 @@ then
 	then
 		# hmc5883 internal SPI bus is rotated 90 deg yaw
 	else
-		if lis3mdl -R 2 start
+		if lis3mdl start
 		then
 			# lis3mdl internal SPI bus is rotated 90 deg yaw
 		else
 			# BMI055 gyro internal SPI bus
-			bmi055 -G start	
+			bmi055 -G start
 		fi
 	fi
 
@@ -249,6 +252,11 @@ then
 
 	# I2C bypass of mpu
 	lps25h start
+
+	# Optical flow deck
+	vl53lxx start
+	pmw3901 start
+
 fi
 
 if ver hwcmp AEROFC_V1
@@ -262,6 +270,18 @@ then
 	ist8310 -C -b 1 -R 4 start
 	aerofc_adc start
 	ll40ls start i2c
+fi
+
+if ver hwcmp OMNIBUS_F4SD
+then
+	mpu6000 -R 12 -s start
+
+	# Possible external compasses
+	hmc5883 -X start
+
+	bmp280 start
+
+	adc start
 fi
 
 if ver hwcmp PX4FMU_V4PRO
@@ -396,7 +416,44 @@ fi
 # Benewake TFMini
 if param greater SENS_EN_TFMINI 0
 then
-	tfmini start
+	if ver hwcmp PX4FMU_V2 PX4FMU_V4PRO
+	then
+		# start the driver on serial 4/5
+		tfmini start -d /dev/ttyS6
+	else
+		if ver hwcmp AEROFC_V1
+		then
+			# start the driver on telemetry
+			tfmini start -d /dev/ttyS3
+		else
+			if param compare SYS_COMPANION 0
+			then
+				# start on default mavlink companion device
+				tfmini start -d /dev/ttyS2
+			fi
+		fi
+	fi
+fi
+
+# LeddarOne
+if param greater SENS_EN_LEDDAR1 0
+then
+	if ver hwcmp PX4FMU_V2 PX4FMU_V4PRO
+	then
+		# start the driver on serial 4/5
+		leddar_one -d /dev/ttyS6 start
+	fi
+	if ver hwcmp AEROFC_V1
+	then
+		# start the driver on telemetry
+		leddar_one -d /dev/ttyS3 start
+	else
+		if param compare SYS_COMPANION 0
+		then
+			# start on default mavlink companion device
+			leddar_one -d /dev/ttyS2 start
+		fi
+	fi
 fi
 
 # Wait 20 ms for sensors (because we need to wait for the HRT and work queue callbacks to fire)

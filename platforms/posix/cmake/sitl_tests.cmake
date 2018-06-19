@@ -9,6 +9,7 @@ set(tests
 	commander
 	controllib
 	conv
+	ctlmath
 	dataman
 	file2
 	float
@@ -52,7 +53,7 @@ foreach(test_name ${tests})
 			tests_${test_name}_generated
 			${PX4_SOURCE_DIR}
 			${PX4_BINARY_DIR}
-			WORKING_DIRECTORY ${SITL_WORKING_DIR})
+		WORKING_DIRECTORY ${SITL_WORKING_DIR})
 
 	set_tests_properties(${test_name} PROPERTIES FAIL_REGULAR_EXPRESSION "${test_name} FAILED")
 	set_tests_properties(${test_name} PROPERTIES PASS_REGULAR_EXPRESSION "${test_name} PASSED")
@@ -79,7 +80,7 @@ foreach(cmd_name ${test_cmds})
 			cmd_${cmd_name}_generated
 			${PX4_SOURCE_DIR}
 			${PX4_BINARY_DIR}
-			WORKING_DIRECTORY ${SITL_WORKING_DIR})
+		WORKING_DIRECTORY ${SITL_WORKING_DIR})
 
 	set_tests_properties(posix_${cmd_name} PROPERTIES PASS_REGULAR_EXPRESSION "Shutting down")
 endforeach()
@@ -94,7 +95,8 @@ add_custom_target(test_results
 set_target_properties(test_results PROPERTIES EXCLUDE_FROM_ALL TRUE)
 
 if (CMAKE_BUILD_TYPE STREQUAL Coverage)
-	setup_target_for_coverage(test_coverage "${CMAKE_CTEST_COMMAND} --output-on-failure -T Test" coverage.info)
+	setup_target_for_coverage(test_coverage "${CMAKE_CTEST_COMMAND} --output-on-failure -T Test" tests)
+	setup_target_for_coverage(generate_coverage "${CMAKE_COMMAND} -E echo" generic)
 endif()
 
 add_custom_target(test_results_junit

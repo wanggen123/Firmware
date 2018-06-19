@@ -47,15 +47,13 @@
 #include <poll.h>
 
 #include <drivers/drv_hrt.h>
-#include <geo/geo.h>
+#include <lib/ecl/geo/geo.h>
 #include <matrix/math.hpp>
 #include <px4_config.h>
 #include <px4_tasks.h>
 #include <systemlib/err.h>
-#include <systemlib/param/param.h>
-#include <systemlib/perf_counter.h>
-#include <systemlib/pid/pid.h>
-#include <systemlib/systemlib.h>
+#include <parameters/param.h>
+#include <perf/perf_counter.h>
 #include <uORB/topics/actuator_controls.h>
 #include <uORB/topics/manual_control_setpoint.h>
 #include <uORB/topics/parameter_update.h>

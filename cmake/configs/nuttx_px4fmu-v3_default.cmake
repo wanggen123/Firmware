@@ -13,36 +13,24 @@ set(config_module_list
 	#
 	# Board support modules
 	#
-	drivers/adis16448
-	drivers/airspeed
+	drivers/barometer
+	drivers/differential_pressure
+	drivers/distance_sensor
+	drivers/magnetometer
+	drivers/telemetry
+
+	drivers/batt_smbus
 	drivers/blinkm
-	drivers/bmi160
-	drivers/bmp280
-	drivers/boards
-	drivers/bst
 	drivers/camera_trigger
-	drivers/device
-	drivers/ets_airspeed
-	drivers/frsky_telemetry
 	drivers/gps
-	drivers/hmc5883
-	drivers/hott
-	drivers/hott/hott_sensors
-	drivers/hott/hott_telemetry
-	drivers/iridiumsbd
+	drivers/imu/adis16448
+	drivers/imu/bmi160
+	drivers/imu/l3gd20
+	drivers/imu/lsm303d
+	drivers/imu/mpu6000
+	drivers/imu/mpu9250
 	drivers/irlock
-	drivers/l3gd20
-	drivers/led
-	drivers/lis3mdl
-	drivers/ll40ls
-	drivers/lsm303d
-	drivers/mb12xx
 	drivers/mkblctrl
-	drivers/mpu6000
-	drivers/mpu9250
-	drivers/ms4525_airspeed
-	drivers/ms5525_airspeed
-	drivers/ms5611
 	drivers/oreoled
 	drivers/protocol_splitter
 	drivers/pwm_input
@@ -51,20 +39,12 @@ set(config_module_list
 	drivers/px4fmu
 	drivers/px4io
 	drivers/rgbled
-	drivers/sdp3x_airspeed
-	drivers/sf0x
-	drivers/sf1xx
-	drivers/snapdragon_rc_pwm
-	drivers/srf02
 	drivers/stm32
 	drivers/stm32/adc
 	drivers/stm32/tone_alarm
 	drivers/tap_esc
-	drivers/teraranger
-	drivers/ulanding
 	drivers/vmount
 	modules/sensors
-	drivers/tfmini
 
 	#
 	# System commands
@@ -87,12 +67,13 @@ set(config_module_list
 	systemcmds/sd_bench
 	systemcmds/top
 	systemcmds/topic_listener
+	systemcmds/tune_control
 	systemcmds/ver
 
 	#
 	# Testing
 	#
-	drivers/sf0x/sf0x_tests
+	drivers/distance_sensor/sf0x/sf0x_tests
 	drivers/test_ppm
 	lib/controllib/controllib_test
 	#lib/rc/rc_tests
@@ -120,8 +101,10 @@ set(config_module_list
 	#
 	modules/attitude_estimator_q
 	modules/ekf2
+	modules/landing_target_estimator
 	modules/local_position_estimator
 	modules/position_estimator_inav
+	modules/wind_estimator
 
 	#
 	# Vehicle Control
@@ -144,35 +127,6 @@ set(config_module_list
 	# Library modules
 	#
 	modules/dataman
-	modules/systemlib
-	modules/systemlib/param
-	modules/uORB
-
-	#
-	# Libraries
-	#
-	lib/controllib
-	lib/conversion
-	lib/DriverFramework/framework
-	lib/ecl
-	lib/geo
-	lib/geo_lookup
-	lib/launchdetection
-	lib/led
-	lib/mathlib
-	lib/mathlib/math/filter
-	lib/mixer
-	lib/runway_takeoff
-	lib/tailsitter_recovery
-	lib/terrain_estimation
-	lib/version
-
-	#
-	# Platform
-	#
-	platforms/common
-	platforms/nuttx
-	platforms/nuttx/px4_layer
 
 	#
 	# OBC challenge
@@ -196,10 +150,6 @@ set(config_module_list
 	# Tutorial code from
 	# https://px4.io/dev/px4_simple_app
 	examples/px4_simple_app
-
-	# Tutorial code from
-	# https://px4.io/dev/daemon
-	examples/px4_daemon_app
 
 	# Tutorial code from
 	# https://px4.io/dev/debug_values

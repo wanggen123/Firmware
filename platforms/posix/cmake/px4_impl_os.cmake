@@ -164,25 +164,22 @@ function(px4_os_add_flags)
 		LINK_DIRS ${LINK_DIRS}
 		DEFINITIONS ${DEFINITIONS})
 
-        set(added_include_dirs
-		src/modules/systemlib
-		src/platforms/posix/include
-		mavlink/include/mavlink
-		)
+	set(added_c_flags)
+	set(added_cxx_flags)
+	set(added_exe_linker_flags)
 
-	# This block sets added_definitions and added_cxx_flags.
-	set(added_definitions
+	add_definitions(
 		-D__PX4_POSIX
 		-Dnoreturn_function=__attribute__\(\(noreturn\)\)
 		)
+		
+	include_directories(platforms/posix/include)
 
 	if(UNIX AND APPLE)
-		list(APPEND added_definitions
+		add_definitions(
 			-D__PX4_DARWIN
 			-D__DF_DARWIN
 			)
-
-		set(added_cxx_flags)
 
 		if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 8.0)
 			message(FATAL_ERROR "PX4 Firmware requires XCode 8 or newer on Mac OS. Version installed on this system: ${CMAKE_CXX_COMPILER_VERSION}")
@@ -192,7 +189,7 @@ function(px4_os_add_flags)
 		STRING(REGEX MATCH "[0-9]+" DARWIN_VERSION ${DARWIN_VERSION})
 		# message(STATUS "PX4 Darwin Version: ${DARWIN_VERSION}")
 		if (DARWIN_VERSION LESS 16)
-			list(APPEND added_definitions
+			add_definitions(
 				-DCLOCK_MONOTONIC=1
 				-DCLOCK_REALTIME=0
 				-D__PX4_APPLE_LEGACY
@@ -200,27 +197,18 @@ function(px4_os_add_flags)
 		endif()
 
 	elseif(CYGWIN)
-		list(APPEND added_definitions
+		add_definitions(
 			-D__PX4_CYGWIN
 			-D_GNU_SOURCE
 			-D__USE_LINUX_IOCTL_DEFS
 			-U __CUSTOM_FILE_IO__
 			)
-
 	else()
-		list(APPEND added_definitions
+		add_definitions(
 			-D__PX4_LINUX
 			-D__DF_LINUX
 			)
-
-		# Use -pthread For linux/g++.
-		set(added_cxx_flags
-			-pthread
-			)
-
 	endif()
-
-	set(added_exe_linker_flags)
 
 	# This block sets added_c_flags (appends to others).
 	if ("${BOARD}" STREQUAL "eagle")
@@ -232,12 +220,8 @@ function(px4_os_add_flags)
 		endif()
 
 		# Add the toolchain specific flags
-		set(added_c_flags ${POSIX_CMAKE_C_FLAGS} --sysroot=${HEXAGON_ARM_SYSROOT})
-
-		list(APPEND added_cxx_flags
-			${POSIX_CMAKE_CXX_FLAGS}
-			--sysroot=${HEXAGON_ARM_SYSROOT}
-			)
+		list(APPEND added_c_flags --sysroot=${HEXAGON_ARM_SYSROOT})
+		list(APPEND added_cxx_flags --sysroot=${HEXAGON_ARM_SYSROOT})
 
 		list(APPEND added_exe_linker_flags
 			-Wl,-rpath-link,${HEXAGON_ARM_SYSROOT}/usr/lib
@@ -252,34 +236,25 @@ function(px4_os_add_flags)
 		else()
 			set(HEXAGON_ARM_SYSROOT $ENV{HEXAGON_ARM_SYSROOT})
 		endif()
+		
+		set(excelsior_flags --sysroot=${HEXAGON_ARM_SYSROOT}/lib32-apq8096 -mfloat-abi=softfp -mfpu=neon -mthumb-interwork)
 
 		# Add the toolchain specific flags
-
-		set(added_c_flags ${POSIX_CMAKE_C_FLAGS} --sysroot=${HEXAGON_ARM_SYSROOT}/lib32-apq8096  -mfloat-abi=softfp -mfpu=neon -mthumb-interwork)
-
-		list(APPEND added_cxx_flags
-			${POSIX_CMAKE_CXX_FLAGS}
-			--sysroot=${HEXAGON_ARM_SYSROOT}/lib32-apq8096  -mfloat-abi=softfp -mfpu=neon -mthumb-interwork
-
-			)
+		list(APPEND added_c_flags ${excelsior_flags})
+		list(APPEND added_cxx_flags ${excelsior_flags})
 
 		list(APPEND added_exe_linker_flags
 			-Wl,-rpath-link,${HEXAGON_ARM_SYSROOT}/lib32-apq8096/usr/lib
 			-Wl,-rpath-link,${HEXAGON_ARM_SYSROOT}/lib32-apq8096/lib
-
-			--sysroot=${HEXAGON_ARM_SYSROOT}/lib32-apq8096  -mfloat-abi=softfp -mfpu=neon -mthumb-interwork
-
+			${excelsior_flags}
 			)
-	elseif ("${BOARD}" STREQUAL "rpi")
-		SET(RPI_COMPILE_FLAGS
-			-mcpu=cortex-a53
-			-mfpu=neon
-			-mfloat-abi=hard
-		)
-		LIST(APPEND added_c_flags ${RPI_COMPILE_FLAGS})
-		LIST(APPEND added_cxx_flags ${RPI_COMPILE_FLAGS})
 
-		FIND_PROGRAM(CXX_COMPILER_PATH ${CMAKE_CXX_COMPILER})
+	elseif ("${BOARD}" STREQUAL "rpi")
+		set(RPI_COMPILE_FLAGS -mcpu=cortex-a53 -mfpu=neon -mfloat-abi=hard)
+		list(APPEND added_c_flags ${RPI_COMPILE_FLAGS})
+		list(APPEND added_cxx_flags ${RPI_COMPILE_FLAGS})
+
+		find_program(CXX_COMPILER_PATH ${CMAKE_CXX_COMPILER})
 
 		GET_FILENAME_COMPONENT(CXX_COMPILER_PATH ${CXX_COMPILER_PATH} DIRECTORY)
 		GET_FILENAME_COMPONENT(CXX_COMPILER_PATH "${CXX_COMPILER_PATH}/../" ABSOLUTE)
@@ -292,8 +267,8 @@ function(px4_os_add_flags)
 				-I${CXX_COMPILER_PATH}/arm-linux-gnueabihf/libc/usr/include/
 			)
 
-			set(added_c_flags ${POSIX_CMAKE_C_FLAGS} ${CLANG_COMPILE_FLAGS})
-			list(APPEND added_cxx_flags ${POSIX_CMAKE_CXX_FLAGS} ${CLANG_COMPILE_FLAGS})
+			list(APPEND added_c_flags ${CLANG_COMPILE_FLAGS})
+			list(APPEND added_cxx_flags ${CLANG_COMPILE_FLAGS})
 			list(APPEND added_exe_linker_flags ${POSIX_CMAKE_EXE_LINKER_FLAGS} ${CLANG_COMPILE_FLAGS}
 				-B${CXX_COMPILER_PATH}/arm-linux-gnueabihf/libc/usr/lib
 				-L${CXX_COMPILER_PATH}/arm-linux-gnueabihf/libc/usr/lib
@@ -339,5 +314,6 @@ function(px4_os_prebuild_targets)
 			REQUIRED OUT BOARD
 			ARGN ${ARGN})
 
-	add_custom_target(${OUT} DEPENDS uorb_headers)
+	add_library(${OUT} INTERFACE)
+	add_dependencies(${OUT} DEPENDS uorb_headers)
 endfunction()

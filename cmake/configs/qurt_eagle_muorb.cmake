@@ -20,7 +20,6 @@ include(qurt_flags)
 include_directories(${HEXAGON_SDK_INCLUDES})
 
 set(config_module_list
-	drivers/device
 
 	#
 	# System commands
@@ -30,28 +29,6 @@ set(config_module_list
 	#
 	# Library modules
 	#
-	modules/systemlib/param
-	modules/systemlib
-	modules/uORB
-
-	#
-	# Libraries
-	#
-	lib/mathlib
-	lib/mathlib/math/filter
-	lib/geo
-	lib/geo_lookup
-	lib/conversion
-	lib/version
-	lib/DriverFramework/framework
-
-	#
-	# QuRT port
-	#
-	platforms/common
-	platforms/qurt/px4_layer
-	platforms/posix/work_queue
-	platforms/qurt/tests/muorb
 
 	#
 	# sources for muorb over fastrpc
