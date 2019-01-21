@@ -583,27 +583,34 @@ MissionBlock::set_previous_pos_setpoint()
 	}
 }
 
+
+//函数输入：当前要悬停的位置item 悬停的高度要求min_clearance
+//函数返回：当前要悬停的位置item
+//函数功能：给出飞机悬停的位置，如果飞机还没解锁 谈不上悬停 idle就行了;
+//        如果pos_sp_triplet在curr有效 就在curr点悬停，外部给出悬停位置，比如说固定翼loiter模式下的指点飞行，地面站鼠标可以指点 飞机飞到这个点后 盘旋
+//        如果地面站没有人指点飞行，切换到loiter模式飞机就在当前位置loiter
 void
 MissionBlock::set_loiter_item(struct mission_item_s *item, float min_clearance)
 {
 	if (_navigator->get_land_detected()->landed) {
 		/* landed, don't takeoff, but switch to IDLE mode */
-		item->nav_cmd = NAV_CMD_IDLE; //如果已经落地
+		item->nav_cmd = NAV_CMD_IDLE; //如果已经落地 切换航点为idle类型
 
-	} else {
+	} else {//如果飞机还在空中  可以悬停 那么在那个点悬停呢？
 		item->nav_cmd = NAV_CMD_LOITER_UNLIMITED; //默认是无限制的悬停
 
-		struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();
+		struct position_setpoint_triplet_s *pos_sp_triplet = _navigator->get_position_setpoint_triplet();//取这个变量
 
-		//根据pos_sp在指定位置悬停
-		if (_navigator->get_can_loiter_at_sp() && pos_sp_triplet->current.valid) {
+		//根据_pos_sp_triplet在curr航点位置悬停，比如auto模式切换到loiter模式
+		if (_navigator->get_can_loiter_at_sp() && pos_sp_triplet->current.valid) { //如果飞机可以在curr点悬停 并且curr有效
 			/* use current position setpoint */
-			item->lat = pos_sp_triplet->current.lat;
+			item->lat = pos_sp_triplet->current.lat; //就把到curr赋值给item，item里面就是代表curr航点位置信息 传递出去返回给调用的函数
 			item->lon = pos_sp_triplet->current.lon;
 			item->altitude = pos_sp_triplet->current.alt;
+			//warnx("gazebo仿真测试证明 这里是对应QGC的指点飞行 测试使用地面站QGC3.4.3");
 
 		} 
-		//否则在当前位置悬停
+		//curr无效 就在位置悬停，比如手动模式切换到loiter模式，没有所谓的curr就在当前位置悬停
 		else {
 			/* use current position and use return altitude as clearance */
 			item->lat = _navigator->get_global_position()->lat;
@@ -611,15 +618,15 @@ MissionBlock::set_loiter_item(struct mission_item_s *item, float min_clearance)
 			item->altitude = _navigator->get_global_position()->alt;
 
 			if (min_clearance > 0.0f && item->altitude < _navigator->get_home_position()->alt + min_clearance) {
-				item->altitude = _navigator->get_home_position()->alt + min_clearance;
+				item->altitude = _navigator->get_home_position()->alt + min_clearance;//对悬停高度有要求
 			}
 		}
 
 		item->altitude_is_relative = false;
-		item->yaw = NAN;
+		item->yaw = NAN;//悬停航向不变
 		item->loiter_radius = _navigator->get_loiter_radius();
 		item->acceptance_radius = _navigator->get_acceptance_radius();
-		item->time_inside = 0.0f;
+		item->time_inside = 0.0f;//悬停的时间
 		item->autocontinue = false;
 		item->origin = ORIGIN_ONBOARD;
 	}

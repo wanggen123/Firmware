@@ -248,7 +248,7 @@ private:
 	float _asp_after_transition;
 	bool _was_in_transition;
 
-	float32 _back_airspeed_filtered; //期望第一模态定高后退一，设置期望的空速=实测的空速（在TECS中滤波后的空速）
+	float _back_airspeed_filtered; //期望第一模态定高后退一，设置期望的空速=实测的空速（在TECS中滤波后的空速）
 
 	// estimator reset counters
 	uint8_t _pos_reset_counter;		// captures the number of times the estimator has reset the horizontal position
