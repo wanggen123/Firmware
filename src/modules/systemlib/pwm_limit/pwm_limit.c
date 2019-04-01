@@ -60,6 +60,11 @@ void pwm_limit_calc(const bool armed, const bool pre_armed, const unsigned num_c
 		    const float *output, uint16_t *effective_pwm, pwm_limit_t *limit)
 {
 
+	//http://dev.px4.io/en/concept/pwm_limit.html
+	//定义ｐｗｍ有四个状态机　init状态可以理解成电调上电初始化的状态　off表示初始化已经完成了但是还没解锁　ramp解锁的时候输出pwm_min  on正常根据控制量计算ｐｗｍ输出
+	//这四个状态下init off输出pwm_disarmed值　　　ramp初始化完成后解锁，既然解锁了肯定先递增到到pwm_min
+	//on正常解锁状态　可以根据控制量输出pwm值，控制量[-1,1]线性比例映射到pwm输出范围[min,max]
+
 	/* first evaluate state changes */
 	switch (limit->state) {
 	case PWM_LIMIT_STATE_INIT:
@@ -206,6 +211,7 @@ void pwm_limit_calc(const bool armed, const bool pre_armed, const unsigned num_c
 				control_value = -1.0f * control_value;
 			}
 
+			//当控制量为-1时　effective_pwm＝min  当控制量为+1时　effective_pwm＝max, [-1,1]线性比例映射到[min,max]
 			effective_pwm[i] = control_value * (max_pwm[i] - min_pwm[i]) / 2 + (max_pwm[i] + min_pwm[i]) / 2;
 
 			/* last line of defense against invalid inputs */

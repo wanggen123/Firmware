@@ -249,6 +249,7 @@ mixer_tick(void)
 
 		/* poor mans mutex */
 		//注意我们平时所说的mix的过程实际计算在下面的“mix”里，outputs[]数据已经是每个pwm mix计算完成后的结果，就是outputs[]里面放的好几个”S“已经融合完成，就是outputs[]里面放的是“O”
+		//outputs[]混合后的　范围在[-1,1],这个数组会在下面重新写到寄存器中　反馈到px4io.cpp主处理器中
 		in_mixer = true;
 		mixed = mixer_group.mix(&outputs[0], PX4IO_SERVO_COUNT, &r_mixer_limits);
 		in_mixer = false;
