@@ -2017,8 +2017,10 @@ PX4IO::io_publish_pwm_outputs()
 		return ret;
 	}
 
-	//下面是从协处理器里拿到的 每个pwm输出 mix计算的结果，范围【-1，+1】
-	//在协处理器 mix.cpp中写到寄存器中的 r_page_actuators[i] = FLOAT_TO_REG(outputs[i]);
+	//mix计算的累加结果，范围【-1，+1】是保存到寄存器 r_page_actuators[i] = FLOAT_TO_REG(outputs[i]);
+	//这里是寄存器PX4IO_PAGE_SERVOS，代表的是计算好的　每路PWM的真实输出　范围是[1000,2000]
+	//即下面的output[i]就是真实的每路pwm输出　日志记录　和地面站分析就是使用的这个主题
+
 	/* convert from register format to float */
 	for (unsigned i = 0; i < _max_actuators; i++) {
 		outputs.output[i] = ctl[i];

@@ -255,6 +255,7 @@ mixer_tick(void)
 		in_mixer = false;
 
 		//r_page_servos是根据pwm状态机计算出来用来真实从io端口驱动的pwm值，范围是【1000，2000】
+		//这个值会保存到寄存器中PX4IO_PAGE_SERVOS中　传递到px4io.cpp中　借助orb_publish(ORB_ID(actuator_outputs)进行记录
 		/* the pwm limit call takes care of out of band errors */
 		pwm_limit_calc(should_arm, should_arm_nothrottle, mixed, r_setup_pwm_reverse, r_page_servo_disarmed,
 			       r_page_servo_control_min, r_page_servo_control_max, outputs, r_page_servos, &pwm_limit);
